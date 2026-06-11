@@ -1,0 +1,17 @@
+{
+  "name": "create-persona",
+  "version": "1.0.0",
+  "description": "从聊天记录创建 AI Persona（5 层结构），支持 DeepSeek/OpenAI 等任意 API",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "create-persona": "index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "analyze": "node index.js --analyze",
+    "correct": "node index.js --correct",
+    "merge": "node index.js --merge",
+    "list": "node index.js --list"
+  }
+}

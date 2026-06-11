@@ -1,25 +1,47 @@
 {
   "expo": {
-    "name": "ai-chat-clone",
+    "name": "AI聊天分身",
     "slug": "ai-chat-clone",
-    "version": "1.0.0",
+    "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "scheme": "ai-chat-clone",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.internal.aichatclone"
     },
     "android": {
+      "package": "com.internal.aichatclone",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
-    }
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-document-picker",
+      "expo-image-picker",
+      "expo-secure-store",
+      "expo-sqlite",
+      "expo-router"
+    ],
+    "extra": {
+      "enableCLIPOnDevice": false,
+      "router": {},
+      "eas": {
+        "projectId": "5bb87ba2-7ff4-4af3-a48a-095b277d823b"
+      }
+    },
+    "owner": "chenxin199445"
   }
 }

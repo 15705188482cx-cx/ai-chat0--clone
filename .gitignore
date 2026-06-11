@@ -39,3 +39,34 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# AI model files (too large for git)
+assets/models/
+
+# environment files
+.env
+
+# Logs and temp files
+*.log
+metro-*
+expo-err*
+expo-out*
+fix_chat.py
+serve-test.js
+.screenshots/
+screenshot*.png
+
+# Design docs
+DESIGN_SPEC.md
+__tests__/
+
+# Backup files
+*.bak
+
+# Debug tools
+tools/create-persona/
+tools/e2e_test.mjs
+tools/fix-store.js
+tools/smoke_test.mjs
+tools/preview_chat.html
+tools/spec-*

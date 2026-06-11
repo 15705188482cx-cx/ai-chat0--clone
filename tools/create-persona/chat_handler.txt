@@ -1,0 +1,41 @@
+﻿  // 对话纠正：长按她的消息可纠正
+  const handleCorrection = useCallback(async (msg: UIMessage) => {
+    Alert.alert("\u7EA0\u6B63TA", "\u5979\u5E94\u8BE5\u600E\u4E48\u56DE\u5E94\uFF1F\u8F93\u5165\u4F60\u671F\u671B\u7684\u8868\u8FBE\u65B9\u5F0F\u3002", [
+      { text: "\u53D6\u6D88", style: "cancel" },
+      { text: "\u786E\u8BA4\u7EA0\u6B63", onPress: () => setCorrectingMsg(msg) }
+    ]);
+  }, []);
+
+  const [correctingMsg, setCorrectingMsg] = useState<UIMessage | null>(null);
+  const [correctionInput, setCorrectionInput] = useState("");
+  const [submittingCorrection, setSubmittingCorrection] = useState(false);
+
+  const submitCorrection = useCallback(async () => {
+    if (!correctingMsg || !correctionInput.trim()) return;
+    setSubmittingCorrection(true);
+    try {
+      const parsed = await parseCorrection(persona?.name || "\u5979", correctionInput);
+      if (persona?.id) {
+        await addCorrection(persona.id, {
+          scene: parsed.scene || "\u5BF9\u8BDD\u4E2D",
+          wrongBehavior: parsed.wrongBehavior || "\u5F53\u524D\u56DE\u590D",
+          correctBehavior: parsed.correctBehavior || correctionInput,
+          timestamp: new Date().toISOString(),
+        });
+      }
+      Alert.alert("\u2705 \u5DF2\u8BB0\u5F55", parsed.correctionRecord || correctionInput);
+    } catch {
+      if (persona?.id) {
+        await addCorrection(persona.id, {
+          scene: "\u5BF9\u8BDD\u4E2D",
+          wrongBehavior: "\u5F53\u524D\u56DE\u590D",
+          correctBehavior: correctionInput,
+          timestamp: new Date().toISOString(),
+        });
+      }
+      Alert.alert("\u2705 \u5DF2\u8BB0\u5F55", "\u5DF2\u8BB0\u5F55\u7EA0\u6B63\uFF1A" + correctionInput);
+    }
+    setCorrectingMsg(null);
+    setCorrectionInput("");
+    setSubmittingCorrection(false);
+  }, [correctingMsg, correctionInput, persona]);
