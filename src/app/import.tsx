@@ -15,14 +15,7 @@ import type { FileImportResult } from "../modules/fileImport";
 import { parseChatFile } from "../modules/chatParser";
 import type { ParseResult } from "../modules/chatParser/types";
 
-// expo-sqlite 在 Web 端不可静态导入（依赖 .wasm），改为动态加载
-async function getNativeDB() {
-  const { getDatabase } = await import("../modules/database/db");
-  const { bulkInsertFromRawMessages } = await import(
-    "../modules/database/repositories/chatRecordRepo"
-  );
-  return { getDatabase, bulkInsertFromRawMessages };
-}
+
 import {
   findPersonaBySender,
   addSamplesToPersona,
@@ -30,7 +23,7 @@ import {
 import type { Persona } from "../modules/persona/types";
 import { nanoid } from "nanoid";
 import { formatDate } from "../utils/dateFormat";
-import { isWeb, addRecordsToMemory } from "../modules/database/memoryFallback";
+import { isWeb, addRecordsToMemory } from "../modules/database/memoryFallback";import { getStore } from "../modules/database/storeProvider";
 
 const WECHAT_GREEN = "#07C160";
 const PAGE_BG = "#F3F3F3";
@@ -83,25 +76,9 @@ export default function ImportWizardScreen() {
         );
       } else {
         const batchId = nanoid();
-        const { getDatabase, bulkInsertFromRawMessages } = await getNativeDB();
-        const db = await getDatabase();
-        await db.runAsync(
-          `INSERT INTO import_batch (id, file_name, file_type, file_size, total_messages, ignored_count, participant_count, time_span_start, time_span_end)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            batchId,
-            file.fileName,
-            file.fileType,
-            file.sizeBytes,
-            result.totalMessages,
-            result.ignoredCount,
-            result.participants.length,
-            result.timeSpan.start.toISOString(),
-            result.timeSpan.end.toISOString(),
-          ],
-        );
+        const store = await getStore()
         for (const session of result.sessions) {
-          await bulkInsertFromRawMessages(session.messages, batchId);
+          await store.bulkInsertChatRecords(session.messages.map((m: any) => ({ batch_id: batchId, sender_name: m.senderName, content: m.content, timestamp: m.timestamp.toISOString(), session_id: null, type: m.type })));
         }
       }
 
@@ -596,5 +573,7 @@ const styles = StyleSheet.create({
   },
   homeBtnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
 });
+
+
 
 

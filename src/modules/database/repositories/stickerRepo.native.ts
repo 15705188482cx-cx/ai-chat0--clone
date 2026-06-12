@@ -1,10 +1,9 @@
-﻿// stickerRepo.ts — 表情包仓库
-// 规则 6: db.ts 使用动态导入，避免 expo-sqlite WASM 在 Web 端被解析
+﻿// =============================================================================
+// stickerRepo.native.ts — 原生端表情包仓库（使用 expo-sqlite）
 // =============================================================================
 
 import { nanoid } from "nanoid";
 
-/** 动态获取数据库实例（避免 expo-sqlite WASM 在 Web 端被 Metro 解析） */
 async function getDb(): Promise<any> {
   const { getDatabase } = await import("../db");
   return getDatabase();

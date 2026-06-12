@@ -2,6 +2,7 @@
 // storeProvider — 全局存储层提供者
 // 规则 5(可测试性): 通过 getStore() 注入，通过 setStoreForTest() 可 Mock
 // 规则 7(失败快速): 初始化失败立即抛异常
+// 规则 6: NativeStore 使用平台扩展名（.native.ts），Web 端自动解析为占位实现
 // =============================================================================
 
 import { Platform } from "react-native";
@@ -14,7 +15,7 @@ let store: IDataStore | null = null;
 
 /**
  * 获取当前平台的存储层实例。
- * 契约：返回已 init() 的 IDataStore 实例。
+ * Web 端使用 WebStore（localStorage），原生端使用 NativeStore（expo-sqlite）。
  * 不变式：返回值 !== null。
  * @throws 初始化失败时抛异常
  */
