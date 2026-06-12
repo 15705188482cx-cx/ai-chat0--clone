@@ -1,6 +1,16 @@
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { useRouter } from "expo-router";
 
+// ========== 颜色常量（规则 3：无魔法值）==========
+const COLORS = {
+  background: "#EDEDED",
+  danger: "#FF6B6B",
+  textPrimary: "#333333",
+  textSecondary: "#666666",
+  brand: "#07C160",
+  white: "#FFFFFF",
+} as const;
+
 interface ErrorFallbackProps {
   message?: string;
   onRetry?: () => void;
@@ -37,12 +47,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#EDEDED",
+    backgroundColor: COLORS.background,
     padding: 32,
   },
   icon: {
     fontSize: 48,
-    color: "#FF6B6B",
+    color: COLORS.danger,
     fontWeight: "700",
     marginBottom: 16,
     width: 64,
@@ -50,23 +60,23 @@ const styles = StyleSheet.create({
     lineHeight: 64,
     textAlign: "center",
     borderWidth: 3,
-    borderColor: "#FF6B6B",
+    borderColor: COLORS.danger,
     borderRadius: 32,
     overflow: "hidden",
   },
-  title: { fontSize: 20, fontWeight: "700", color: "#333", marginBottom: 8 },
-  message: { fontSize: 14, color: "#666", textAlign: "center", marginBottom: 24 },
+  title: { fontSize: 20, fontWeight: "700", color: COLORS.textPrimary, marginBottom: 8 },
+  message: { fontSize: 14, color: COLORS.textSecondary, textAlign: "center", marginBottom: 24 },
   retryButton: {
-    backgroundColor: "#07C160",
+    backgroundColor: COLORS.brand,
     paddingHorizontal: 32,
     paddingVertical: 12,
     borderRadius: 8,
     marginBottom: 12,
   },
-  retryText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  retryText: { color: COLORS.white, fontSize: 16, fontWeight: "600" },
   homeButton: {
     paddingHorizontal: 32,
     paddingVertical: 12,
   },
-  homeText: { color: "#07C160", fontSize: 16 },
+  homeText: { color: COLORS.brand, fontSize: 16 },
 });

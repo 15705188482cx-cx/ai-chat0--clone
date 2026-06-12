@@ -1,4 +1,4 @@
-﻿import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -23,7 +23,7 @@ import {
 import type { Persona } from "../modules/persona/types";
 import { nanoid } from "nanoid";
 import { formatDate } from "../utils/dateFormat";
-import { isWeb, addRecordsToMemory } from "../modules/database/memoryFallback";import { getStore } from "../modules/database/storeProvider";
+import { getStore } from "../modules/database/storeProvider";
 
 const WECHAT_GREEN = "#07C160";
 const PAGE_BG = "#F3F3F3";
@@ -64,23 +64,17 @@ export default function ImportWizardScreen() {
         throw new Error("未解析到有效文本消息，请检查聊天记录格式");
       }
 
-      if (isWeb()) {
-        addRecordsToMemory(
-          textMessages.map((message) => ({
-            id: nanoid(),
-            sender: message.senderName,
-            content: message.content,
-            timestamp: message.timestamp,
-            type: message.type,
-          })),
-        );
-      } else {
-        const batchId = nanoid();
-        const store = await getStore()
-        for (const session of result.sessions) {
-          await store.bulkInsertChatRecords(session.messages.map((m: any) => ({ batch_id: batchId, sender_name: m.senderName, content: m.content, timestamp: m.timestamp.toISOString(), session_id: null, type: m.type })));
-        }
-      }
+      const batchId = nanoid();
+      const store = await getStore();
+      const records = textMessages.map((message) => ({
+        batch_id: batchId,
+        sender_name: message.senderName,
+        content: message.content,
+        timestamp: message.timestamp.toISOString(),
+        session_id: null,
+        type: message.type,
+      }));
+      await store.bulkInsertChatRecords(records);
 
       const matches: ParticipantMatch[] = [];
       for (const participant of result.participants) {
@@ -113,7 +107,7 @@ export default function ImportWizardScreen() {
   const handleLoadTestData = useCallback(async () => {
     try {
       // Web: fetch test data directly from the bundled JSON
-      if (isWeb() && typeof window !== "undefined") {
+      if (typeof window !== "undefined") {
         var raw = null;
         try {
           var resp = await fetch("/test-data.json");
@@ -132,15 +126,18 @@ export default function ImportWizardScreen() {
         const result = parseChatFile(JSON.stringify(raw), "json");
         if (!result || result.totalMessages === 0) throw new Error("解析失败");
         
-        // Store in memory
+        // Store via IDataStore
+        const store = await getStore();
         const cleanedMsgs = result.sessions.flatMap((s: any) => s.messages)
-          .filter((m: any) => m.type === "text" && m.content.trim());
-        addRecordsToMemory(
+          .filter((m: any) => m.type === 'text' && m.content.trim());
+        const batchId2 = nanoid();
+        await store.bulkInsertChatRecords(
           cleanedMsgs.map((m: any) => ({
-            id: nanoid(),
-            sender: m.senderName,
+            batch_id: batchId2,
+            sender_name: m.senderName,
             content: m.content,
-            timestamp: m.timestamp,
+            timestamp: new Date(m.timestamp).toISOString(),
+            session_id: null,
             type: m.type,
           })),
         );
@@ -573,6 +570,9 @@ const styles = StyleSheet.create({
   },
   homeBtnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
 });
+
+
+
 
 
 

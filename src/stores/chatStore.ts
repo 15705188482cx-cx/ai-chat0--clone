@@ -1,8 +1,7 @@
-﻿import { create } from "zustand";
+import { create } from "zustand";
 import { nanoid } from "nanoid";
 import { getStore } from "../modules/database/storeProvider";
 import { getConversationPairs } from "../modules/database/repositories/chatRecordRepo";
-import type { IDataStore } from "../modules/database/IDataStore";
 import { getPersonaById } from "../modules/persona/personaService";
 import type { Persona } from "../modules/persona/types";
 import { buildMessages } from "../modules/aiEngine/promptBuilder";
@@ -13,7 +12,6 @@ import { filterResponse } from "../modules/aiEngine/contentFilter";
 import { getRateLimiter } from "../modules/aiEngine/rateLimiter";
 import { chatNonStreaming } from "../modules/aiEngine/deepseekService";
 import { StickerService } from "../modules/stickerManager/stickerService";
-import { getConversationById } from "../modules/database/repositories/conversationRepo";
 
 // ========== 类型定义 ==========
 export interface UIMessage {
@@ -43,319 +41,273 @@ export interface ChatState {
 }
 
 // ========== 常量（规则 3：无魔法值）==========
-/** API 响应超时时间（毫秒） */
 const API_TIMEOUT_MS = 25000;
-/** 全局安全超时时间，防止 isThinking 永久 true */
 const GLOBAL_THINKING_TIMEOUT_MS = 35000;
-/** 每次 API 调用的最大消息上下文数 */
 const MAX_MESSAGE_COUNT = 50;
-/** 限流器默认值 */
 const DEFAULT_RATE_LIMIT = 50;
 
-// ========== 全局安全定时器（规则 7：失败快速）==========
-let globalThinkingTimer: ReturnType<typeof setTimeout> | null = null;
+// ========== 安全定时器（实例级别，不再使用模块级可变状态）==========
+class ThinkingTimer {
+  private _timer: ReturnType<typeof setTimeout> | null = null;
 
-function clearGlobalTimer(): void {
-  if (globalThinkingTimer) {
-    clearTimeout(globalThinkingTimer);
-    globalThinkingTimer = null;
+  clear(): void {
+    if (this._timer) {
+      clearTimeout(this._timer);
+      this._timer = null;
+    }
+  }
+
+  set(callback: () => void, ms: number): void {
+    this.clear();
+    this._timer = setTimeout(callback, ms);
   }
 }
 
-function setGlobalTimer(set: any): void {
-  clearGlobalTimer();
-  globalThinkingTimer = setTimeout(() => {
-    const state = useChatStore.getState();
-    if (state.isThinking) {
-      console.warn("[chatStore] 全局安全超时触发，强制解锁 isThinking");
-      set({
-        isThinking: false,
-        messages: state.messages.map((m: UIMessage) =>
-          m.isStreaming
-            ? { ...m, text: m.text || "回复超时，请重试", isStreaming: false }
-            : m,
-        ),
-      });
-    }
-    clearGlobalTimer();
-  }, GLOBAL_THINKING_TIMEOUT_MS);
+// ========== API 调用逻辑（从 Store 中提取）==========
+async function callChatAPI(
+  persona: Persona,
+  sanitizedUserInput: string,
+  currentMessages: UIMessage[],
+  conversationId: string,
+): Promise<{ replyText: string; stickerUri: string | null }> {
+  // 获取对话样本
+  let samples: string[] = [];
+  try {
+    samples = await getConversationPairs(persona.sourceSender, "我", 10);
+  } catch (err) {
+    console.warn("[chatAPI] 获取对话样本失败:", err);
+  }
+
+  const maskedSamples = samples.map((s) => maskPII(s));
+
+  // 构建历史消息
+  const history = currentMessages
+    .filter((m) => !m.isStreaming && m.text.length > 0)
+    .slice(0, -2)
+    .map((m) => ({ role: m.role as "user" | "persona", text: m.text }));
+  const trimmedHistory = trimHistory(history);
+  const apiMessages = buildMessages(persona, maskedSamples, trimmedHistory, sanitizedUserInput);
+
+  // 调用 API（带超时）
+  const reply = await Promise.race([
+    chatNonStreaming(apiMessages),
+    new Promise<string>((_, reject) =>
+      setTimeout(
+        () => reject(new Error("API 响应超时（" + (API_TIMEOUT_MS / 1000) + "秒）")),
+        API_TIMEOUT_MS,
+      ),
+    ),
+  ]);
+
+  const filtered = filterResponse(reply || "回复失败，请重试");
+
+  // 搜索表情包
+  let stickerUri: string | null = null;
+  try {
+    const matches = await StickerService.search(filtered, 1);
+    if (matches.length > 0) stickerUri = matches[0].filePath;
+  } catch (err) {
+    console.warn("[chatAPI] 表情包搜索失败:", err);
+  }
+
+  // 写入 AI 回复到 DB
+  try {
+    const store = await getStore();
+    await store.insertMessage(conversationId, "persona", filtered, stickerUri ?? undefined);
+  } catch (err) {
+    console.warn("[chatAPI] AI 回复写入 DB 失败:", err);
+  }
+
+  return { replyText: filtered, stickerUri };
 }
 
-// ========== Store（规则 4：无空 catch）==========
-export const useChatStore = create<ChatState>((set, get) => ({
-  // ========== 初始状态 ==========
-  messages: [],
-  isThinking: false,
-  persona: null,
-  conversationId: null,
-  rateLimitRemaining: DEFAULT_RATE_LIMIT,
+// ========== Store ==========
+export const useChatStore = create<ChatState>((set, get) => {
+  const thinkingTimer = new ThinkingTimer();
 
-  // ========== 初始化会话 ==========
-  initConversation: async (personaId: string) => {
-    try {
+  return {
+    // ========== 初始状态 ==========
+    messages: [],
+    isThinking: false,
+    persona: null,
+    conversationId: null,
+    rateLimitRemaining: DEFAULT_RATE_LIMIT,
+
+    // ========== 初始化会话 ==========
+    initConversation: async (personaId: string) => {
       const persona = await getPersonaById(personaId);
       if (!persona) throw new Error("分身不存在");
+      await get().setPersonaAndInitConversation(persona);
+    },
 
-      const store: IDataStore = await getStore();
+    setPersonaAndInitConversation: async (persona: Persona) => {
+      const store = await getStore();
       const conv = await store.createConversation(
         persona.id,
         "与 " + persona.name + " 的对话",
       );
       set({ persona, conversationId: conv.id, messages: [], isThinking: false });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "创建会话失败";
-      console.error("[chatStore] initConversation 失败:", err);
-      throw new Error(msg);
-    }
-  },
+    },
 
-  // ========== 设置分身并初始化会话 ==========
-  setPersonaAndInitConversation: async (persona: Persona) => {
-    try {
-      const store: IDataStore = await getStore();
-      const conv = await store.createConversation(
-        persona.id,
-        "与 " + persona.name + " 的对话",
-      );
-      set({ persona, conversationId: conv.id, messages: [], isThinking: false });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "创建会话失败";
-      console.error("[chatStore] setPersonaAndInitConversation 失败:", err);
-      throw new Error(msg);
-    }
-  },
-
-  // ========== 从会话 ID 加载 ==========
-  loadFromConversationId: async (convId: string) => {
-    try {
-      const conv = await getConversationById(convId);
+    loadFromConversationId: async (convId: string) => {
+      const store = await getStore();
+      const conv = await store.getConversationById(convId);
       if (!conv) throw new Error("会话不存在");
-      const persona = await getPersonaById(conv.persona_id);
+
+      const persona = await store.getPersonaById(conv.persona_id);
       if (!persona) throw new Error("分身不存在");
-      set({ persona, conversationId: convId, messages: [], isThinking: false });
-    } catch (err) {
-      console.error("[chatStore] loadFromConversationId 失败:", err);
-      throw err;
-    }
-  },
 
-  // ========== 加载消息 ==========
-  loadMessages: async () => {
-    const { conversationId } = get();
-    if (!conversationId) return;
+      const messages = await store.getLatestMessages(convId, MAX_MESSAGE_COUNT);
+      const uiMessages: UIMessage[] = messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        text: m.text_content,
+        createdAt: m.created_at,
+        stickerUri: m.sticker_id,
+      }));
 
-    try {
-      const store: IDataStore = await getStore();
-      const rows = await store.getLatestMessages(conversationId, MAX_MESSAGE_COUNT);
-      const uiMessages: UIMessage[] = rows.map((r) => ({
-        id: r.id,
-        role: r.role as "user" | "persona",
-        text: r.text_content,
-        createdAt: r.created_at,
+      set({ persona, conversationId: convId, messages: uiMessages, isThinking: false });
+    },
+
+    loadMessages: async () => {
+      const { conversationId } = get();
+      if (!conversationId) return;
+      const store = await getStore();
+      const messages = await store.getLatestMessages(conversationId, MAX_MESSAGE_COUNT);
+      const uiMessages: UIMessage[] = messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        text: m.text_content,
+        createdAt: m.created_at,
+        stickerUri: m.sticker_id,
       }));
       set({ messages: uiMessages });
-    } catch (err) {
-      console.error("[chatStore] loadMessages 失败:", err);
-    }
-  },
+    },
 
-  // ========== 发送消息（核心功能）==========
-  sendMessage: async (text: string) => {
-    const { persona, conversationId } = get();
+    // ========== 发送消息 ==========
+    sendMessage: async (text: string) => {
+      const { conversationId, persona } = get();
+      if (!conversationId || !persona) {
+        console.error("[chatStore] 无法发送：conversationId 或 persona 缺失");
+        set({ isThinking: false });
+        return;
+      }
 
-    // 规则 2：前置条件检查
-    if (!persona || !conversationId) {
-      set((s) => ({
-        messages: [
-          ...s.messages,
-          {
-            id: nanoid(),
-            role: "persona",
-            text: "请先选择一个分身或会话",
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      }));
-      return;
-    }
+      // 限流检查
+      const limiter = getRateLimiter();
+      if (!limiter.check()) {
+        const waitMinutes = Math.ceil((DEFAULT_RATE_LIMIT - limiter.remaining) / 50 * 60);
+        set((s) => ({
+          messages: [
+            ...s.messages,
+            {
+              id: nanoid(),
+              role: "persona",
+              text: "回复太频繁，请 " + waitMinutes + " 分钟后再试",
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        }));
+        return;
+      }
+      set({ rateLimitRemaining: limiter.remaining });
 
-    // 规则 2：persona 必须有 sourceSender
-    if (!persona.sourceSender) {
-      console.error("[chatStore] persona 缺少 sourceSender:", persona.id);
-      set((s) => ({
-        messages: [
-          ...s.messages,
-          {
-            id: nanoid(),
-            role: "persona",
-            text: "分身配置错误（缺少聊天对象来源）",
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      }));
-      return;
-    }
+      // 用户输入清洗
+      const sanitized = sanitizeUserInput(text);
+      if (!sanitized) return;
 
-    // 限流检查
-    const limiter = getRateLimiter();
-    if (!limiter.check()) {
-      const waitMinutes = Math.ceil((DEFAULT_RATE_LIMIT - limiter.remaining) / 50 * 60);
-      set((s) => ({
-        messages: [
-          ...s.messages,
-          {
-            id: nanoid(),
-            role: "persona",
-            text: "回复太频繁，请 " + waitMinutes + " 分钟后再试",
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      }));
-      return;
-    }
-    set({ rateLimitRemaining: limiter.remaining });
-
-    // 用户输入清洗
-    const sanitized = sanitizeUserInput(text);
-    if (!sanitized) {
-      console.warn("[chatStore] 用户输入被完全过滤");
-      return;
-    }
-
-    // 写入用户消息到 DB
-    const userMsg: UIMessage = {
-      id: nanoid(),
-      role: "user",
-      text: sanitized,
-      createdAt: new Date().toISOString(),
-    };
-
-    try {
+      // 写入用户消息到 DB（非阻塞）
+      const userMsg: UIMessage = {
+        id: nanoid(),
+        role: "user",
+        text: sanitized,
+        createdAt: new Date().toISOString(),
+      };
       const store = await getStore();
-      await store.insertMessage(conversationId, "user", sanitized);
-    } catch (err) {
-      console.warn("[chatStore] 用户消息写入 DB 失败:", err);
-      // 非关键路径，不阻塞
-    }
+      try {
+        await store.insertMessage(conversationId, "user", sanitized);
+      } catch (err) {
+        console.warn("[chatStore] 用户消息写入 DB 失败:", err);
+      }
 
-    // 创建 AI 回复占位
-    const aiMsgId = nanoid();
-    set((s) => ({
-      messages: [
-        ...s.messages,
-        userMsg,
-        {
+      // 创建 AI 回复占位
+      const aiMsgId = nanoid();
+      set((s) => ({
+        messages: [...s.messages, userMsg, {
           id: aiMsgId,
           role: "persona",
           text: "",
           createdAt: new Date().toISOString(),
           isStreaming: true,
-        },
-      ],
-      isThinking: true,
-    }));
-    setGlobalTimer(set);
+        }],
+        isThinking: true,
+      }));
 
-    try {
-      // 获取对话样本
-      let samples: string[] = [];
+      // 设置全局安全超时
+      thinkingTimer.set(() => {
+        const state = get();
+        if (state.isThinking) {
+          console.warn("[chatStore] 全局安全超时触发，强制解锁 isThinking");
+          set({
+            isThinking: false,
+            messages: state.messages.map((m: UIMessage) =>
+              m.isStreaming ? { ...m, text: m.text || "回复超时，请重试", isStreaming: false } : m,
+            ),
+          });
+        }
+        thinkingTimer.clear();
+      }, GLOBAL_THINKING_TIMEOUT_MS);
+
       try {
-        samples = await getConversationPairs(persona.sourceSender, "我", 10);
-      } catch (err) {
-        console.warn("[chatStore] 获取对话样本失败:", err);
-      }
+        const { replyText, stickerUri } = await callChatAPI(
+          persona,
+          sanitized,
+          get().messages,
+          conversationId,
+        );
 
-      const maskedSamples = samples.map((s) => maskPII(s));
-      const { messages: currentMessages } = get();
-      const history = currentMessages
-        .filter((m) => !m.isStreaming && m.text.length > 0)
-        .slice(0, -2)
-        .map((m) => ({ role: m.role as "user" | "persona", text: m.text }));
-      const trimmedHistory = trimHistory(history);
-      const apiMessages = buildMessages(persona, maskedSamples, trimmedHistory, sanitized);
-
-      // 调用 API（带超时）
-      let reply = "";
-      try {
-        reply = await Promise.race([
-          chatNonStreaming(apiMessages),
-          new Promise<string>((_, reject) =>
-            setTimeout(() => reject(new Error("API 响应超时（" + (API_TIMEOUT_MS / 1000) + "秒）")), API_TIMEOUT_MS),
+        thinkingTimer.clear();
+        set((s) => ({
+          messages: s.messages.map((m) =>
+            m.id === aiMsgId ? { ...m, text: replyText, isStreaming: false, stickerUri } : m,
           ),
-        ]);
+          isThinking: false,
+          rateLimitRemaining: limiter.remaining,
+        }));
       } catch (err) {
-        reply = "回复失败：" + (err instanceof Error ? err.message : "未知错误");
-        console.error("[chatStore] API 调用失败:", err);
+        thinkingTimer.clear();
+        const errorText = "回复失败：" + (err instanceof Error ? err.message : "未知错误");
+        console.error("[chatStore] sendMessage 失败:", err);
+        set((s) => ({
+          messages: s.messages.map((m) =>
+            m.id === aiMsgId ? { ...m, text: errorText, isStreaming: false } : m,
+          ),
+          isThinking: false,
+        }));
       }
+    },
 
-      // 内容过滤
-      const filtered = filterResponse(reply || "回复失败，请重试");
-
-      // 搜索表情包
-      let stickerUri: string | null = null;
-      try {
-        const matches = await StickerService.search(filtered, 1);
-        if (matches.length > 0) stickerUri = matches[0].filePath;
-      } catch (err) {
-        console.warn("[chatStore] 表情包搜索失败:", err);
-      }
-
-      // 写入 AI 回复到 DB
-      try {
-        const store = await getStore();
-        await store.insertMessage(conversationId, "persona", filtered, stickerUri ?? undefined);
-      } catch (err) {
-        console.warn("[chatStore] AI 回复写入 DB 失败:", err);
-      }
-
-      // 更新 UI
-      clearGlobalTimer();
-      set((s) => ({
-        messages: s.messages.map((m) =>
-          m.id === aiMsgId
-            ? { ...m, text: filtered, isStreaming: false, stickerUri }
-            : m,
-        ),
+    // ========== 强制解锁 ==========
+    forceUnfreeze: () => {
+      thinkingTimer.clear();
+      const state = get();
+      set({
         isThinking: false,
-        rateLimitRemaining: limiter.remaining,
-      }));
-    } catch (err) {
-      // 外层 catch — 兜底
-      clearGlobalTimer();
-      const errorText =
-        "回复失败：" + (err instanceof Error ? err.message : "未知错误");
-      console.error("[chatStore] sendMessage 整体失败:", err);
-      set((s) => ({
-        messages: s.messages.map((m) =>
-          m.id === aiMsgId ? { ...m, text: errorText, isStreaming: false } : m,
+        messages: state.messages.map((m: UIMessage) =>
+          m.isStreaming ? { ...m, text: m.text || "已手动取消", isStreaming: false } : m,
         ),
-        isThinking: false,
-      }));
-    }
-  },
+      });
+    },
 
-  // ========== 强制解锁 ==========
-  forceUnfreeze: () => {
-    clearGlobalTimer();
-    const state = get();
-    set({
-      isThinking: false,
-      messages: state.messages.map((m: UIMessage) =>
-        m.isStreaming
-          ? { ...m, text: m.text || "已手动取消失败", isStreaming: false }
-          : m,
-      ),
-    });
-  },
+    // ========== 设置会话 ==========
+    setConversation: (conversationId, persona) => {
+      set({ conversationId, persona, messages: [] });
+    },
 
-  // ========== 设置会话 ==========
-  setConversation: (conversationId, persona) => {
-    set({ conversationId, persona, messages: [] });
-  },
-
-  // ========== 重置 ==========
-  reset: () => {
-    clearGlobalTimer();
-    set({ messages: [], isThinking: false, persona: null, conversationId: null });
-  },
-}));
+    // ========== 重置 ==========
+    reset: () => {
+      thinkingTimer.clear();
+      set({ messages: [], isThinking: false, persona: null, conversationId: null });
+    },
+  };
+});

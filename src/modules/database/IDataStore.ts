@@ -1,5 +1,5 @@
-﻿// =============================================================================
-// IDataStore — 存储层统一接口契约
+// =============================================================================
+// IDataStore — 存储层统一接口契约（扩展版）
 // 规则 1(契约优先): 所有操作的输入/输出/错误类型在此定义
 // 规则 2(不变式断言): 每个方法的前置/后置条件用 JSDoc 文档化
 // 规则 4(显式错误): 所有错误通过 Error 子类传递，不静默吞掉
@@ -36,6 +36,14 @@ export interface MessageRow {
   created_at: string;
 }
 
+export interface StickerRow {
+  id: string;
+  file_path: string;
+  label: string | null;
+  embedding: string | null;
+  imported_at: string;
+}
+
 // ========== 显式错误类型（规则 4）==========
 /** Store 未初始化时调用方法 */
 export class StoreNotReadyError extends Error {
@@ -58,6 +66,14 @@ export class InvalidArgumentError extends Error {
   constructor(method: string, reason: string) {
     super(`[DataStore] ${method} 参数错误：${reason}`);
     this.name = "InvalidArgumentError";
+  }
+}
+
+/** 存储配额超限 */
+export class StorageQuotaError extends Error {
+  constructor(detail: string) {
+    super(`[DataStore] 存储配额超限：${detail}`);
+    this.name = "StorageQuotaError";
   }
 }
 
@@ -98,6 +114,26 @@ export interface IDataStore {
    */
   bulkInsertChatRecords(records: Omit<ChatRecordRow, "id">[]): Promise<number>;
 
+  /**
+   * 清空所有聊天记录（用于重新导入）。
+   * @throws StoreNotReadyError 未初始化
+   */
+  clearChatRecords(): Promise<void>;
+
+  /**
+   * 获取两个参与者之间的对话对样本（一问一答）。
+   * @param personAName 参与者 A（通常是"我"）
+   * @param personBName 参与者 B
+   * @param pairCount 对数（默认 10）
+   * @returns 格式化的对话对文本数组
+   * @throws StoreNotReadyError 未初始化
+   */
+  getConversationPairs(
+    personAName: string,
+    personBName: string,
+    pairCount?: number,
+  ): Promise<string[]>;
+
   // ── Persona ──
 
   /**
@@ -135,6 +171,19 @@ export interface IDataStore {
   /** 更新会话时间戳。不存在则不操作。 */
   updateConversationTimestamp(conversationId: string): Promise<void>;
 
+  /**
+   * 删除会话及其关联消息。
+   * @param id 会话 ID
+   */
+  deleteConversation(id: string): Promise<void>;
+
+  /**
+   * 更新会话标题。
+   * @param id 会话 ID
+   * @param title 新标题
+   */
+  updateConversationTitle(id: string, title: string): Promise<void>;
+
   // ── 消息（Message）──
 
   /**
@@ -154,4 +203,19 @@ export interface IDataStore {
    * 返回按时间正序排列的消息。
    */
   getLatestMessages(conversationId: string, limit: number): Promise<MessageRow[]>;
+
+  // ── 表情包（Sticker）──
+
+  /** 插入一条表情包记录 */
+  insertSticker(params: {
+    filePath: string;
+    label?: string;
+    embedding?: string;
+  }): Promise<StickerRow>;
+
+  /** 获取所有表情包 */
+  getAllStickers(): Promise<StickerRow[]>;
+
+  /** 删除指定表情包 */
+  deleteStickerById(id: string): Promise<void>;
 }

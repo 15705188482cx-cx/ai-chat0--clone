@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -19,10 +19,6 @@ import {
   createPersona,
 } from "../../modules/persona/personaService";
 import { getSampleBySender } from "../../modules/database/repositories/chatRecordRepo";
-import {
-  getMemoryDistinctSenders,
-  getMemorySamplesBySender,
-} from "../../modules/database/memoryFallback";
 import { analyzeStyleFull } from "../../modules/aiEngine/styleAnalyzer";
 import { useChatStore } from "../../stores/chatStore";
 
@@ -53,8 +49,7 @@ export default function PersonaSetupScreen() {
       (async () => {
       try {
         const names = await getAvailableSenders().catch(() => [] as string[]);
-        // 如果 DB 返回空（Web 环境），从内存 fallback 读取
-        const allNames = names.length > 0 ? names : getMemoryDistinctSenders();
+        const allNames = names;
         // 过滤掉我，只保留可模仿的对象
         const filtered = allNames.filter((n) => n !== "我");
         setSenders(filtered);
@@ -100,10 +95,7 @@ export default function PersonaSetupScreen() {
         } catch {
           // DB 不可用
         }
-        // 如果 DB 返回空，尝试内存 fallback
-        if (texts.length === 0) {
-          texts = getMemorySamplesBySender(name, 20);
-        }
+        // getSampleBySender 已通过 IDataStore 统一处理所有存储后端
         if (texts.length > 0) {
           // 15秒超时保护，防止API卡死
           const result = await Promise.race<{ styleSummary: string; layers: Record<string, any> }>([
@@ -616,6 +608,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
+
+
 
 
 

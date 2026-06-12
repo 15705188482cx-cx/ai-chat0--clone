@@ -1,8 +1,13 @@
+// =============================================================================
+// stickerService — 表情包服务
+// 规则 1(契约优先): 通过 getStore() 统一访问存储层
+// =============================================================================
+
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system/legacy";
 import { nanoid } from "nanoid";
-import { insertSticker, getAllStickers, deleteSticker } from "../database/repositories/stickerRepo";
+import { getStore } from "../database/storeProvider";
 import { keywordMatch } from "./keywordMatcher";
 import type { StickerRecord, StickerSearchResult } from "./types";
 
@@ -24,23 +29,19 @@ export const StickerService = {
 
     const asset = result.assets[0];
 
-    // 缩放至 512px
     const manipulated = await ImageManipulator.manipulateAsync(
       asset.uri,
       [{ resize: { width: 512 } }],
       { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG },
     );
 
-    // 复制到 App 内部存储
     await FileSystem.makeDirectoryAsync(STICKERS_DIR, { intermediates: true });
-    await FileSystem.writeAsStringAsync(
-      `${STICKERS_DIR}.nomedia`,
-      "",
-    );
+    await FileSystem.writeAsStringAsync(`${STICKERS_DIR}.nomedia`, "");
     const destPath = `${STICKERS_DIR}${nanoid()}.jpg`;
     await FileSystem.copyAsync({ from: manipulated.uri, to: destPath });
 
-    const row = await insertSticker({
+    const store = await getStore();
+    const row = await store.insertSticker({
       filePath: destPath,
       label: label ?? asset.fileName ?? "表情包",
     });
@@ -55,7 +56,8 @@ export const StickerService = {
 
   /** 获取所有表情包 */
   async getAll(): Promise<StickerRecord[]> {
-    const rows = await getAllStickers();
+    const store = await getStore();
+    const rows = await store.getAllStickers();
     return rows.map((r) => ({
       id: r.id,
       filePath: r.file_path,
@@ -76,7 +78,6 @@ export const StickerService = {
     const all = await this.getAll();
     const target = all.find((s) => s.id === id);
 
-    // 删除文件
     if (target?.filePath) {
       try {
         await FileSystem.deleteAsync(target.filePath, { idempotent: true });
@@ -85,6 +86,7 @@ export const StickerService = {
       }
     }
 
-    await deleteSticker(id);
+    const store = await getStore();
+    await store.deleteStickerById(id);
   },
 };

@@ -1,4 +1,4 @@
-﻿// =============================================================================
+// =============================================================================
 // WebStore — IDataStore 的 Web (localStorage) 实现
 // 规则 1(契约优先): 实现 IDataStore 所有方法
 // 规则 2(不变式断言): 方法内部检查前置条件
@@ -14,15 +14,21 @@ import type {
   ChatRecordRow,
   ConversationRow,
   MessageRow,
+  StickerRow,
 } from "./IDataStore";
 import {
   StoreNotReadyError,
   InvalidArgumentError,
+  StorageQuotaError,
 } from "./IDataStore";
 
 // ========== 常量（规则 3：无魔法值）==========
 /** localStorage 存储键名 */
-const STORAGE_KEY = "AI_CHAT_DB_V2";
+const STORAGE_KEY = "AI_CHAT_DB_V3";
+/** 持久化防抖延迟（毫秒） */
+const PERSIST_DEBOUNCE_MS = 300;
+/** localStorage 配额安全阈值（字节） */
+const QUOTA_SAFETY_BYTES = 4 * 1024 * 1024; // 4MB
 
 // ========== 内部持久化快照类型 ==========
 interface WebDbSnapshot {
@@ -30,6 +36,7 @@ interface WebDbSnapshot {
   personas: Persona[];
   conversations: ConversationRow[];
   messages: MessageRow[];
+  stickers: StickerRow[];
 }
 
 /** 空快照默认值（规则 3） */
@@ -38,12 +45,26 @@ const EMPTY_SNAPSHOT: WebDbSnapshot = {
   personas: [],
   conversations: [],
   messages: [],
+  stickers: [],
 };
+
+// ========== Web 端颜色主题常量 ==========
+export const COLORS = {
+  background: "#EDEDED",
+  danger: "#FF6B6B",
+  textPrimary: "#333333",
+  textSecondary: "#666666",
+  brand: "#07C160",
+  white: "#FFFFFF",
+} as const;
 
 /**
  * WebStore — 使用 localStorage 实现 IDataStore。
  * 适用于 Web/预览环境，所有数据存储在浏览器本地。
  */
+// ========== 模块级防抖（避免跨实例竞态）==========
+let _globalPersistTimer: ReturnType<typeof setTimeout> | null = null;
+
 export class WebStore implements IDataStore {
   private db: WebDbSnapshot = { ...EMPTY_SNAPSHOT };
   private initialized = false;
@@ -52,6 +73,11 @@ export class WebStore implements IDataStore {
 
   async init(): Promise<void> {
     if (this.initialized) return;
+    // 取消任何挂起的持久化写入（来自之前实例的防抖可能仍待执行）
+    if (_globalPersistTimer) {
+      clearTimeout(_globalPersistTimer);
+      _globalPersistTimer = null;
+    }
     if (Platform.OS !== "web") {
       console.warn("[WebStore] 非 Web 平台，跳过初始化");
       return;
@@ -61,17 +87,16 @@ export class WebStore implements IDataStore {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as WebDbSnapshot;
-        // 安全恢复：每个字段都用兜底值（规则 7：失败快速 + 有损恢复）
         this.db = {
           chatRecords: Array.isArray(parsed.chatRecords) ? parsed.chatRecords : [],
           personas: Array.isArray(parsed.personas) ? parsed.personas : [],
           conversations: Array.isArray(parsed.conversations) ? parsed.conversations : [],
           messages: Array.isArray(parsed.messages) ? parsed.messages : [],
+          stickers: Array.isArray(parsed.stickers) ? parsed.stickers : [],
         };
       }
       this.initialized = true;
     } catch (err) {
-      // 规则 4: 显式错误，不清空
       console.error("[WebStore] 从 localStorage 恢复失败，使用空数据:", err);
       this.db = { ...EMPTY_SNAPSHOT };
       this.initialized = true;
@@ -87,15 +112,33 @@ export class WebStore implements IDataStore {
     }
   }
 
-  /** 持久化当前数据到 localStorage */
-  private persist(): void {
-    this.assertReady();
+  /** 防抖持久化 — 延迟写入 localStorage */
+  private schedulePersist(): void {
+    if (_globalPersistTimer) {
+      clearTimeout(_globalPersistTimer);
+    }
+    _globalPersistTimer = setTimeout(() => {
+      _globalPersistTimer = null;
+      this.flushPersist();
+    }, PERSIST_DEBOUNCE_MS);
+  }
+
+  /** 立即写入 localStorage */
+  private flushPersist(): void {
     if (Platform.OS !== "web") return;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.db));
+      const serialized = JSON.stringify(this.db);
+      if (serialized.length > QUOTA_SAFETY_BYTES) {
+        console.warn(
+          `[WebStore] 数据大小 ${(serialized.length / 1024 / 1024).toFixed(1)}MB 接近配额限制`,
+        );
+      }
+      localStorage.setItem(STORAGE_KEY, serialized);
     } catch (err) {
       console.error("[WebStore] 持久化失败:", err);
-      // 规则 7: 失败快速 — 持久化失败不阻止内存操作继续
+      if (err instanceof DOMException && err.name === "QuotaExceededError") {
+        throw new StorageQuotaError("localStorage 存储空间不足，请清理旧数据");
+      }
     }
   }
 
@@ -117,7 +160,6 @@ export class WebStore implements IDataStore {
     limit: number,
   ): Promise<ChatRecordRow[]> {
     this.assertReady();
-    // 规则 2: 空字符串返回空数组
     if (!senderName || senderName.trim().length === 0) {
       return [];
     }
@@ -125,7 +167,6 @@ export class WebStore implements IDataStore {
     const matches = this.db.chatRecords.filter(
       (r) => r.sender_name === senderName,
     );
-    // Fisher-Yates 洗牌
     const shuffled = [...matches];
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -150,15 +191,47 @@ export class WebStore implements IDataStore {
       type: r.type,
     }));
     this.db.chatRecords.push(...rows);
-    this.persist();
+    this.schedulePersist();
     return rows.length;
+  }
+
+  async clearChatRecords(): Promise<void> {
+    this.assertReady();
+    this.db.chatRecords = [];
+    this.schedulePersist();
+  }
+
+  async getConversationPairs(
+    personAName: string,
+    personBName: string,
+    pairCount = 10,
+  ): Promise<string[]> {
+    this.assertReady();
+    const records = this.db.chatRecords
+      .filter(
+        (r) =>
+          r.type === "text" &&
+          (r.sender_name === personAName || r.sender_name === personBName),
+      )
+      .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+    const pairs: string[] = [];
+    for (let i = 1; i < records.length; i++) {
+      const prev = records[i - 1];
+      const curr = records[i];
+      if (prev.sender_name === personAName && curr.sender_name === personBName) {
+        pairs.push(
+          `${personAName}: ${prev.content}\n${personBName}: ${curr.content}`,
+        );
+      }
+    }
+    return pairs.slice(-pairCount);
   }
 
   // ==================== Persona ====================
 
   async savePersona(persona: Persona): Promise<void> {
     this.assertReady();
-    // 规则 2: 前置条件断言
     if (!persona.id) {
       throw new InvalidArgumentError("savePersona", "persona.id 不能为空");
     }
@@ -171,18 +244,16 @@ export class WebStore implements IDataStore {
     } else {
       this.db.personas.push(persona);
     }
-    this.persist();
+    this.schedulePersist();
   }
 
   async getAllPersonas(): Promise<Persona[]> {
     this.assertReady();
-    // 返回副本，防止外部修改内部状态
     return [...this.db.personas];
   }
 
   async getPersonaById(id: string): Promise<Persona | null> {
     this.assertReady();
-    // 规则 2: 空 ID 返回 null
     if (!id) return null;
     return this.db.personas.find((p) => p.id === id) || null;
   }
@@ -190,19 +261,15 @@ export class WebStore implements IDataStore {
   async deletePersona(id: string): Promise<void> {
     this.assertReady();
     if (!id) return;
-    const beforeCount = this.db.personas.length;
     this.db.personas = this.db.personas.filter((p) => p.id !== id);
     this.db.conversations = this.db.conversations.filter(
       (c) => c.persona_id !== id,
     );
     this.db.messages = this.db.messages.filter((m) => {
       const conv = this.db.conversations.find((c) => c.id === m.conversation_id);
-      return conv?.persona_id !== id;
+      return conv != null;
     });
-    if (this.db.personas.length === beforeCount) {
-      console.warn(`[WebStore] deletePersona: id=${id} 未找到，无操作`);
-    }
-    this.persist();
+    this.schedulePersist();
   }
 
   // ==================== 会话 ====================
@@ -224,7 +291,7 @@ export class WebStore implements IDataStore {
       updated_at: now,
     };
     this.db.conversations.push(conv);
-    this.persist();
+    this.schedulePersist();
     return conv;
   }
 
@@ -246,7 +313,25 @@ export class WebStore implements IDataStore {
     const conv = this.db.conversations.find((c) => c.id === conversationId);
     if (conv) {
       conv.updated_at = new Date().toISOString();
-      this.persist();
+      this.schedulePersist();
+    }
+  }
+
+  async deleteConversation(id: string): Promise<void> {
+    this.assertReady();
+    if (!id) return;
+    this.db.messages = this.db.messages.filter((m) => m.conversation_id !== id);
+    this.db.conversations = this.db.conversations.filter((c) => c.id !== id);
+    this.schedulePersist();
+  }
+
+  async updateConversationTitle(id: string, title: string): Promise<void> {
+    this.assertReady();
+    const conv = this.db.conversations.find((c) => c.id === id);
+    if (conv) {
+      conv.title = title;
+      conv.updated_at = new Date().toISOString();
+      this.schedulePersist();
     }
   }
 
@@ -274,14 +359,13 @@ export class WebStore implements IDataStore {
       created_at: new Date().toISOString(),
     };
     this.db.messages.push(msg);
-    // 更新会话时间戳
     const conv = this.db.conversations.find(
       (c) => c.id === conversationId,
     );
     if (conv) {
       conv.updated_at = msg.created_at;
     }
-    this.persist();
+    this.schedulePersist();
   }
 
   async getLatestMessages(
@@ -293,7 +377,37 @@ export class WebStore implements IDataStore {
     const msgs = this.db.messages.filter(
       (m) => m.conversation_id === conversationId,
     );
-    // 按时间升序，取最后 safeLimit 条
     return msgs.slice(-safeLimit);
+  }
+
+  // ==================== 表情包 ====================
+
+  async insertSticker(params: {
+    filePath: string;
+    label?: string;
+    embedding?: string;
+  }): Promise<StickerRow> {
+    this.assertReady();
+    const sticker: StickerRow = {
+      id: nanoid(),
+      file_path: params.filePath,
+      label: params.label || null,
+      embedding: params.embedding || null,
+      imported_at: new Date().toISOString(),
+    };
+    this.db.stickers.push(sticker);
+    this.schedulePersist();
+    return sticker;
+  }
+
+  async getAllStickers(): Promise<StickerRow[]> {
+    this.assertReady();
+    return [...this.db.stickers];
+  }
+
+  async deleteStickerById(id: string): Promise<void> {
+    this.assertReady();
+    this.db.stickers = this.db.stickers.filter((s) => s.id !== id);
+    this.schedulePersist();
   }
 }

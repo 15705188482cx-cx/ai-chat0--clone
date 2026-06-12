@@ -1,10 +1,9 @@
-﻿// =============================================================================
+// =============================================================================
 // NativeStore — IDataStore 的 Native (expo-sqlite) 实现
 // 规则 1(契约优先): 实现 IDataStore 所有方法
 // 规则 2(不变式断言): 前置条件检查
 // 规则 4(显式错误): 使用 IDataStore 定义的 Error 子类
 // =============================================================================
-
 
 import { nanoid } from "nanoid";
 import type { Persona } from "../persona/types";
@@ -13,6 +12,7 @@ import type {
   ChatRecordRow,
   ConversationRow,
   MessageRow,
+  StickerRow,
 } from "./IDataStore";
 import {
   StoreNotReadyError,
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS chat_record (
   content TEXT NOT NULL,
   timestamp TEXT NOT NULL,
   session_id TEXT,
-  type TEXT NOT NULL DEFAULT '"'"'text'"'"'
+  type TEXT NOT NULL DEFAULT 'text'
 );
 
 CREATE INDEX IF NOT EXISTS idx_chat_record_sender ON chat_record(sender_name);
@@ -42,26 +42,34 @@ CREATE TABLE IF NOT EXISTS persona (
   source_sender TEXT NOT NULL,
   chat_sample_ids TEXT,
   style_summary TEXT,
-  layers_json TEXT DEFAULT '"'"'{}'"'"',
-  corrections_json TEXT DEFAULT '"'"'[]'"'"',
-  created_at TEXT NOT NULL DEFAULT (datetime('"'"'now'"'"'))
+  layers_json TEXT DEFAULT '{}',
+  corrections_json TEXT DEFAULT '[]',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS conversation (
   id TEXT PRIMARY KEY,
   persona_id TEXT NOT NULL REFERENCES persona(id) ON DELETE CASCADE,
-  title TEXT NOT NULL DEFAULT '"'"'\u65b0\u5bf9\u8bdd'"'"',
-  created_at TEXT NOT NULL DEFAULT (datetime('"'"'now'"'"')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('"'"'now'"'"'))
+  title TEXT NOT NULL DEFAULT '新对话',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS message (
   id TEXT PRIMARY KEY,
   conversation_id TEXT NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
-  role TEXT NOT NULL CHECK(role IN ('"'"'user'"'"', '"'"'persona'"'"')),
+  role TEXT NOT NULL CHECK(role IN ('user', 'persona')),
   text_content TEXT NOT NULL,
   sticker_id TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('"'"'now'"'"'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS sticker (
+  id TEXT PRIMARY KEY,
+  file_path TEXT NOT NULL,
+  label TEXT,
+  embedding TEXT,
+  imported_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 `;
 
@@ -69,28 +77,28 @@ CREATE TABLE IF NOT EXISTS message (
 const BULK_INSERT_BATCH_SIZE = 50;
 
 /** 迁移 — 添加可能缺失的列 */
-async function runMigrations(db: any): Promise<void> {
+async function runMigrations(database: any): Promise<void> {
   const addColIfMissing = async (
     table: string,
     col: string,
     ddl: string,
   ) => {
-    const cols = await db.getAllAsync<{ name: string }>(
+    const cols = await database.getAllAsync<{ name: string }>(
       `PRAGMA table_info("${table}")`,
     );
-    if (!cols.some((c) => c.name === col)) {
-      await db.execAsync(ddl);
+    if (!cols.some((c: { name: string }) => c.name === col)) {
+      await database.execAsync(ddl);
     }
   };
   await addColIfMissing(
     "persona",
     "layers_json",
-    'ALTER TABLE persona ADD COLUMN layers_json TEXT DEFAULT \'{}\'',
+    "ALTER TABLE persona ADD COLUMN layers_json TEXT DEFAULT '{}'",
   );
   await addColIfMissing(
     "persona",
     "corrections_json",
-    'ALTER TABLE persona ADD COLUMN corrections_json TEXT DEFAULT \'[]\'',
+    "ALTER TABLE persona ADD COLUMN corrections_json TEXT DEFAULT '[]'",
   );
 }
 
@@ -101,11 +109,13 @@ async function runMigrations(db: any): Promise<void> {
 export class NativeStore implements IDataStore {
   private db: any | null = null;
   private initialized = false;
+  private _sqliteModule: any = null;
 
   async init(): Promise<void> {
     if (this.initialized && this.db) return;
     try {
-      const sqlite = await this.getSQLite(); this.db = await sqlite.openDatabaseAsync("chat.db");
+      const sqlite = await this.getSQLite();
+      this.db = await sqlite.openDatabaseAsync("chat.db");
       await this.db.execAsync(SCHEMA_SQL);
       await runMigrations(this.db);
       this.initialized = true;
@@ -129,7 +139,7 @@ export class NativeStore implements IDataStore {
   async getChatRecordCount(): Promise<number> {
     this.assertReady();
     const row = await this.db!.getFirstAsync<{ cnt: number }>(
-      'SELECT COUNT(*) as cnt FROM chat_record',
+      "SELECT COUNT(*) as cnt FROM chat_record",
     );
     return row?.cnt ?? 0;
   }
@@ -137,9 +147,9 @@ export class NativeStore implements IDataStore {
   async getDistinctSenders(): Promise<string[]> {
     this.assertReady();
     const rows = await this.db!.getAllAsync<{ sender_name: string }>(
-      'SELECT DISTINCT sender_name FROM chat_record ORDER BY sender_name',
+      "SELECT DISTINCT sender_name FROM chat_record ORDER BY sender_name",
     );
-    return rows.map((r) => r.sender_name);
+    return rows.map((r: { sender_name: string }) => r.sender_name);
   }
 
   async getSamplesBySender(
@@ -150,7 +160,7 @@ export class NativeStore implements IDataStore {
     if (!senderName || senderName.trim().length === 0) return [];
     const safeLimit = Math.max(1, limit);
     return this.db!.getAllAsync<ChatRecordRow>(
-      'SELECT * FROM chat_record WHERE sender_name = ? ORDER BY RANDOM() LIMIT ?',
+      "SELECT * FROM chat_record WHERE sender_name = ? ORDER BY RANDOM() LIMIT ?",
       [senderName, safeLimit],
     );
   }
@@ -164,48 +174,58 @@ export class NativeStore implements IDataStore {
     let count = 0;
     for (let i = 0; i < records.length; i += BULK_INSERT_BATCH_SIZE) {
       const batch = records.slice(i, i + BULK_INSERT_BATCH_SIZE);
-      const placeholders = batch
-        .map(() => '(?, ?, ?, ?, ?, ?, ?)')
-        .join(', ');
-      const values: string[] = [];
+      const placeholders = batch.map(() => "(?, ?, ?, ?, ?, ?, ?)").join(", ");
+      const params: unknown[] = [];
       for (const r of batch) {
-        values.push(
+        params.push(
           nanoid(),
           r.batch_id,
           r.sender_name,
           r.content,
           r.timestamp,
-          r.session_id ?? '',
+          r.session_id ?? null,
           r.type,
         );
       }
-      try {
-        await this.db!.runAsync(
-          'INSERT INTO chat_record (id, batch_id, sender_name, content, timestamp, session_id, type) VALUES ' +
-            placeholders,
-          values,
-        );
-      } catch (err) {
-        // 批量失败 → 逐条回退（规则 7：失败快速 + 有损恢复）
-        console.warn('[NativeStore] 批量插入失败，逐条回退:', err);
-        for (const r of batch) {
-          await this.db!.runAsync(
-            'INSERT INTO chat_record (id, batch_id, sender_name, content, timestamp, session_id, type) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [
-              nanoid(),
-              r.batch_id,
-              r.sender_name,
-              r.content,
-              r.timestamp,
-              r.session_id ?? '',
-              r.type,
-            ],
-          );
-        }
-      }
+      await this.db!.runAsync(
+        `INSERT INTO chat_record (id, batch_id, sender_name, content, timestamp, session_id, type) VALUES ${placeholders}`,
+        params,
+      );
       count += batch.length;
     }
     return count;
+  }
+
+  async clearChatRecords(): Promise<void> {
+    this.assertReady();
+    await this.db!.runAsync("DELETE FROM chat_record");
+  }
+
+  async getConversationPairs(
+    personAName: string,
+    personBName: string,
+    pairCount = 10,
+  ): Promise<string[]> {
+    this.assertReady();
+    const rows = await this.db!.getAllAsync<ChatRecordRow>(
+      `SELECT * FROM chat_record
+       WHERE type = 'text'
+         AND (sender_name = ? OR sender_name = ?)
+       ORDER BY timestamp ASC`,
+      [personAName, personBName],
+    );
+
+    const pairs: string[] = [];
+    for (let i = 1; i < rows.length; i++) {
+      const prev = rows[i - 1];
+      const curr = rows[i];
+      if (prev.sender_name === personAName && curr.sender_name === personBName) {
+        pairs.push(
+          `${personAName}: ${prev.content}\n${personBName}: ${curr.content}`,
+        );
+      }
+    }
+    return pairs.slice(-pairCount);
   }
 
   // ── Persona ──
@@ -213,10 +233,10 @@ export class NativeStore implements IDataStore {
   async savePersona(persona: Persona): Promise<void> {
     this.assertReady();
     if (!persona.id) {
-      throw new InvalidArgumentError('savePersona', 'persona.id 不能为空');
+      throw new InvalidArgumentError("savePersona", "persona.id 不能为空");
     }
     if (!persona.name) {
-      throw new InvalidArgumentError('savePersona', 'persona.name 不能为空');
+      throw new InvalidArgumentError("savePersona", "persona.name 不能为空");
     }
     await this.db!.runAsync(
       `INSERT OR REPLACE INTO persona (id, name, source_sender, chat_sample_ids, style_summary, layers_json, corrections_json)
@@ -226,7 +246,7 @@ export class NativeStore implements IDataStore {
         persona.name,
         persona.sourceSender,
         JSON.stringify(persona.chatSampleIds || []),
-        persona.styleSummary || '',
+        persona.styleSummary || "",
         JSON.stringify(persona.layers || {}),
         JSON.stringify(persona.corrections || []),
       ],
@@ -236,7 +256,7 @@ export class NativeStore implements IDataStore {
   async getAllPersonas(): Promise<Persona[]> {
     this.assertReady();
     const rows = await this.db!.getAllAsync<any>(
-      'SELECT * FROM persona ORDER BY created_at DESC',
+      "SELECT * FROM persona ORDER BY created_at DESC",
     );
     return rows.map((r: any) => this.parsePersonaRow(r));
   }
@@ -244,7 +264,7 @@ export class NativeStore implements IDataStore {
   async getPersonaById(id: string): Promise<Persona | null> {
     this.assertReady();
     const row = await this.db!.getFirstAsync<any>(
-      'SELECT * FROM persona WHERE id = ?',
+      "SELECT * FROM persona WHERE id = ?",
       [id],
     );
     return row ? this.parsePersonaRow(row) : null;
@@ -252,7 +272,7 @@ export class NativeStore implements IDataStore {
 
   async deletePersona(id: string): Promise<void> {
     this.assertReady();
-    await this.db!.runAsync('DELETE FROM persona WHERE id = ?', [id]);
+    await this.db!.runAsync("DELETE FROM persona WHERE id = ?", [id]);
   }
 
   // ── 会话 ──
@@ -263,13 +283,13 @@ export class NativeStore implements IDataStore {
   ): Promise<ConversationRow> {
     this.assertReady();
     if (!personaId) {
-      throw new InvalidArgumentError('createConversation', 'personaId 不能为空');
+      throw new InvalidArgumentError("createConversation", "personaId 不能为空");
     }
     const id = nanoid();
     const now = new Date().toISOString();
-    const safeTitle = title || '新对话';
+    const safeTitle = title || "新对话";
     await this.db!.runAsync(
-      'INSERT INTO conversation (id, persona_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      "INSERT INTO conversation (id, persona_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
       [id, personaId, safeTitle, now, now],
     );
     return {
@@ -285,7 +305,7 @@ export class NativeStore implements IDataStore {
     this.assertReady();
     if (!id) return null;
     return this.db!.getFirstAsync<ConversationRow>(
-      'SELECT * FROM conversation WHERE id = ?',
+      "SELECT * FROM conversation WHERE id = ?",
       [id],
     );
   }
@@ -293,7 +313,7 @@ export class NativeStore implements IDataStore {
   async getAllConversations(): Promise<ConversationRow[]> {
     this.assertReady();
     return this.db!.getAllAsync<ConversationRow>(
-      'SELECT * FROM conversation ORDER BY updated_at DESC',
+      "SELECT * FROM conversation ORDER BY updated_at DESC",
     );
   }
 
@@ -301,8 +321,22 @@ export class NativeStore implements IDataStore {
     this.assertReady();
     const now = new Date().toISOString();
     await this.db!.runAsync(
-      'UPDATE conversation SET updated_at = ? WHERE id = ?',
+      "UPDATE conversation SET updated_at = ? WHERE id = ?",
       [now, conversationId],
+    );
+  }
+
+  async deleteConversation(id: string): Promise<void> {
+    this.assertReady();
+    await this.db!.runAsync("DELETE FROM conversation WHERE id = ?", [id]);
+  }
+
+  async updateConversationTitle(id: string, title: string): Promise<void> {
+    this.assertReady();
+    const now = new Date().toISOString();
+    await this.db!.runAsync(
+      "UPDATE conversation SET title = ?, updated_at = ? WHERE id = ?",
+      [title, now, id],
     );
   }
 
@@ -310,19 +344,19 @@ export class NativeStore implements IDataStore {
 
   async insertMessage(
     conversationId: string,
-    role: 'user' | 'persona',
+    role: "user" | "persona",
     textContent: string,
     stickerId?: string,
   ): Promise<void> {
     this.assertReady();
-    if (!['user', 'persona'].includes(role)) {
+    if (!["user", "persona"].includes(role)) {
       throw new InvalidArgumentError(
-        'insertMessage',
+        "insertMessage",
         `无效角色: ${role}，必须是 "user" 或 "persona"`,
       );
     }
     await this.db!.runAsync(
-      'INSERT INTO message (id, conversation_id, role, text_content, sticker_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      "INSERT INTO message (id, conversation_id, role, text_content, sticker_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
       [
         nanoid(),
         conversationId,
@@ -341,29 +375,66 @@ export class NativeStore implements IDataStore {
     this.assertReady();
     const safeLimit = Math.max(1, limit);
     return this.db!.getAllAsync<MessageRow>(
-      'SELECT * FROM message WHERE conversation_id = ? ORDER BY created_at ASC LIMIT ?',
+      "SELECT * FROM message WHERE conversation_id = ? ORDER BY created_at ASC LIMIT ?",
       [conversationId, safeLimit],
     );
   }
 
-    // ==================== 内部帮助方法 ====================
+  // ── 表情包 ──
+
+  async insertSticker(params: {
+    filePath: string;
+    label?: string;
+    embedding?: string;
+  }): Promise<StickerRow> {
+    this.assertReady();
+    const id = nanoid();
+    const now = new Date().toISOString();
+    await this.db!.runAsync(
+      "INSERT INTO sticker (id, file_path, label, embedding, imported_at) VALUES (?, ?, ?, ?, ?)",
+      [id, params.filePath, params.label || null, params.embedding || null, now],
+    );
+    return {
+      id,
+      file_path: params.filePath,
+      label: params.label || null,
+      embedding: params.embedding || null,
+      imported_at: now,
+    };
+  }
+
+  async getAllStickers(): Promise<StickerRow[]> {
+    this.assertReady();
+    return this.db!.getAllAsync<StickerRow>(
+      "SELECT * FROM sticker ORDER BY imported_at DESC",
+    );
+  }
+
+  async deleteStickerById(id: string): Promise<void> {
+    this.assertReady();
+    await this.db!.runAsync("DELETE FROM sticker WHERE id = ?", [id]);
+  }
+
+  // ==================== 内部帮助方法 ====================
 
   /** 动态获取 expo-sqlite 模块 */
   private async getSQLite() {
-    return await import("expo-sqlite");
+    if (this._sqliteModule) return this._sqliteModule;
+    this._sqliteModule = await import("expo-sqlite");
+    return this._sqliteModule;
   }
 
   private parsePersonaRow(row: any): Persona {
-    let layers: Persona['layers'];
-    let corrections: Persona['corrections'];
+    let layers: Persona["layers"];
+    let corrections: Persona["corrections"];
     try {
-      const parsed = JSON.parse(row.layers_json || '{}');
+      const parsed = JSON.parse(row.layers_json || "{}");
       layers = Object.keys(parsed).length > 0 ? parsed : undefined;
     } catch {
       layers = undefined;
     }
     try {
-      const parsed = JSON.parse(row.corrections_json || '[]');
+      const parsed = JSON.parse(row.corrections_json || "[]");
       corrections = parsed.length > 0 ? parsed : undefined;
     } catch {
       corrections = undefined;
@@ -372,13 +443,11 @@ export class NativeStore implements IDataStore {
       id: row.id,
       name: row.name,
       sourceSender: row.source_sender,
-      chatSampleIds: JSON.parse(row.chat_sample_ids || '[]'),
-      styleSummary: row.style_summary || '',
+      chatSampleIds: JSON.parse(row.chat_sample_ids || "[]"),
+      styleSummary: row.style_summary || "",
       ...(layers ? { layers } : {}),
       ...(corrections ? { corrections } : {}),
       createdAt: row.created_at,
     };
   }
 }
-
-
