@@ -1,4 +1,4 @@
-ï»¿import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -22,7 +22,7 @@ import { getCount } from "../../modules/database/repositories/chatRecordRepo";
 import { DISCLAIMER_TEXT } from "../../modules/aiEngine/contentFilter";
 import { getAllPersonas } from "../../modules/persona/personaService";
 import type { Persona } from "../../modules/persona/types";
-import * as SecureStore from "../../modules/config/webStorage";
+import * as webStorage from "../../modules/config/webStorage";
 import { StickerPickerModal } from "../../components/StickerPickerModal";
 
 const WECHAT_GREEN = "#07C160";
@@ -45,7 +45,7 @@ export default function SettingsScreen() {
   const [messageCount, setMessageCount] = useState(0);
   const [rateLimitRemaining, setRateLimitRemaining] = useState(50);
 
-  // ç”¨æˆ·èµ„æ–™
+  // ÓÃ»§×ÊÁÏ
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [nickname, setNickname] = useState("");
   const [signature, setSignature] = useState("");
@@ -54,10 +54,10 @@ export default function SettingsScreen() {
   const [nicknameDraft, setNicknameDraft] = useState("");
   const [signatureDraft, setSignatureDraft] = useState("");
 
-  // æ‰€æœ‰åˆ†èº«èµ„æ–™ï¼ˆæ”¯æŒå¤šä¸ªï¼‰
+  // ËùÓĞ·ÖÉí×ÊÁÏ£¨Ö§³Ö¶à¸ö£©
   const [personaProfiles, setPersonaProfiles] = useState<PersonaProfile[]>([]);
 
-  // è¡¨æƒ…åŒ…å¼¹çª—
+  // ±íÇé°üµ¯´°
   const [stickerModalVisible, setStickerModalVisible] = useState(false);
 
   useEffect(() => {
@@ -66,23 +66,23 @@ export default function SettingsScreen() {
       setHasKey(!!key);
       const count = await getCount();
       setMessageCount(count);
-      // rateLimiter æ˜¯å†…å­˜æ»‘åŠ¨çª—å£ï¼ŒApp é‡å¯åé‡ç½®
+      // rateLimiter ÊÇÄÚ´æ»¬¶¯´°¿Ú£¬App ÖØÆôºóÖØÖÃ
       setRateLimitRemaining(getRateLimiter().remaining);
 
-      // åŠ è½½ç”¨æˆ·èµ„æ–™
-      const savedAvatar = await SecureStore.getItemAsync(USER_AVATAR_KEY);
+      // ¼ÓÔØÓÃ»§×ÊÁÏ
+      const savedAvatar = await webStorage.getItemAsync(USER_AVATAR_KEY);
       if (savedAvatar) setAvatarUri(savedAvatar);
-      const savedNickname = await SecureStore.getItemAsync(USER_NICKNAME_KEY);
+      const savedNickname = await webStorage.getItemAsync(USER_NICKNAME_KEY);
       if (savedNickname) setNickname(savedNickname);
-      const savedSignature = await SecureStore.getItemAsync(USER_SIGNATURE_KEY);
+      const savedSignature = await webStorage.getItemAsync(USER_SIGNATURE_KEY);
       if (savedSignature) setSignature(savedSignature);
 
-      // åŠ è½½æ‰€æœ‰åˆ†èº«
+      // ¼ÓÔØËùÓĞ·ÖÉí
       const personas = await getAllPersonas();
       const profiles: PersonaProfile[] = [];
       for (const p of personas) {
-        const avatar = await SecureStore.getItemAsync(`persona_avatar_${p.id}`);
-        const sig = await SecureStore.getItemAsync(`persona_signature_${p.id}`);
+        const avatar = await webStorage.getItemAsync(`persona_avatar_${p.id}`);
+        const sig = await webStorage.getItemAsync(`persona_signature_${p.id}`);
         profiles.push({
           persona: p,
           avatarUri: avatar,
@@ -93,12 +93,12 @@ export default function SettingsScreen() {
     })();
   }, []);
 
-  // --- ç”¨æˆ·èµ„æ–™æ“ä½œ ---
+  // --- ÓÃ»§×ÊÁÏ²Ù×÷ ---
 
   const handlePickAvatar = useCallback(async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert("æƒé™ä¸è¶³", "éœ€è¦ç›¸å†Œæƒé™æ‰èƒ½é€‰æ‹©å¤´åƒ");
+      Alert.alert("È¨ÏŞ²»×ã", "ĞèÒªÏà²áÈ¨ÏŞ²ÅÄÜÑ¡ÔñÍ·Ïñ");
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -110,7 +110,7 @@ export default function SettingsScreen() {
     if (!result.canceled && result.assets.length > 0) {
       const uri = result.assets[0].uri;
       setAvatarUri(uri);
-      await SecureStore.setItemAsync(USER_AVATAR_KEY, uri);
+      await webStorage.setItemAsync(USER_AVATAR_KEY, uri);
     }
   }, []);
 
@@ -118,7 +118,7 @@ export default function SettingsScreen() {
     const trimmed = nicknameDraft.trim();
     if (trimmed) {
       setNickname(trimmed);
-      await SecureStore.setItemAsync(USER_NICKNAME_KEY, trimmed);
+      await webStorage.setItemAsync(USER_NICKNAME_KEY, trimmed);
     }
     setShowNicknameInput(false);
   }, [nicknameDraft]);
@@ -127,20 +127,20 @@ export default function SettingsScreen() {
     const trimmed = signatureDraft.trim();
     setSignature(trimmed);
     if (trimmed) {
-      await SecureStore.setItemAsync(USER_SIGNATURE_KEY, trimmed);
+      await webStorage.setItemAsync(USER_SIGNATURE_KEY, trimmed);
     } else {
-      await SecureStore.deleteItemAsync(USER_SIGNATURE_KEY);
+      await webStorage.deleteItemAsync(USER_SIGNATURE_KEY);
     }
     setShowSignatureInput(false);
   }, [signatureDraft]);
 
-  // --- åˆ†èº«æ“ä½œ ---
+  // --- ·ÖÉí²Ù×÷ ---
 
   const handlePickPersonaAvatar = useCallback(
     async (personaId: string) => {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert("æƒé™ä¸è¶³", "éœ€è¦ç›¸å†Œæƒé™æ‰èƒ½é€‰æ‹©å¤´åƒ");
+        Alert.alert("È¨ÏŞ²»×ã", "ĞèÒªÏà²áÈ¨ÏŞ²ÅÄÜÑ¡ÔñÍ·Ïñ");
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -151,7 +151,7 @@ export default function SettingsScreen() {
       });
       if (!result.canceled && result.assets.length > 0) {
         const uri = result.assets[0].uri;
-        await SecureStore.setItemAsync(`persona_avatar_${personaId}`, uri);
+        await webStorage.setItemAsync(`persona_avatar_${personaId}`, uri);
         setPersonaProfiles((prev) =>
           prev.map((p) =>
             p.persona.id === personaId ? { ...p, avatarUri: uri } : p,
@@ -165,7 +165,7 @@ export default function SettingsScreen() {
   const handleEditPersonaSignature = useCallback(
     (personaId: string, text: string) => {
       const trimmed = text.trim();
-      SecureStore.setItemAsync(`persona_signature_${personaId}`, trimmed);
+      webStorage.setItemAsync(`persona_signature_${personaId}`, trimmed);
       setPersonaProfiles((prev) =>
         prev.map((p) =>
           p.persona.id === personaId
@@ -185,12 +185,12 @@ export default function SettingsScreen() {
     await setApiKey(trimmed);
     setHasKey(true);
     setApiKeyInput("");
-    Alert.alert("å·²ä¿å­˜", "API Key å·²å®‰å…¨å­˜å‚¨");
+    Alert.alert("ÒÑ±£´æ", "API Key ÒÑ°²È«´æ´¢");
   };
 
   const handleDeleteKey = async () => {
     if (typeof window !== 'undefined' && window.confirm) {
-      if (!window.confirm('ç¡®å®šåˆ é™¤ API Keyï¼Ÿåˆ é™¤å AI å›å¤åŠŸèƒ½å°†ä¸å¯ç”¨ã€‚')) return;
+      if (!window.confirm('È·¶¨É¾³ı API Key£¿É¾³ıºó AI »Ø¸´¹¦ÄÜ½«²»¿ÉÓÃ¡£')) return;
     }
     await deleteApiKey();
     setHasKey(false);
@@ -202,21 +202,21 @@ export default function SettingsScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
-        {/* --- æˆ‘çš„èµ„æ–™ --- */}
-        <Text style={styles.sectionHeader}>æˆ‘çš„</Text>
+        {/* --- ÎÒµÄ×ÊÁÏ --- */}
+        <Text style={styles.sectionHeader}>ÎÒµÄ</Text>
         <View style={styles.sectionCard}>
           <TouchableOpacity
             style={styles.profileRow}
             onPress={handlePickAvatar}
             activeOpacity={0.6}
           >
-            <Text style={styles.rowLabel}>å¤´åƒ</Text>
+            <Text style={styles.rowLabel}>Í·Ïñ</Text>
             <View style={styles.rowRight}>
               <View style={styles.userAvatar}>
                 {avatarUri ? (
                   <Image source={{ uri: avatarUri }} style={styles.avatarImg} />
                 ) : (
-                  <Text style={styles.placeholder}>ğŸ‘¤</Text>
+                  <Text style={styles.placeholder}>??</Text>
                 )}
               </View>
               <Text style={styles.arrow}>{'>'}</Text>
@@ -231,7 +231,7 @@ export default function SettingsScreen() {
             }}
             activeOpacity={0.6}
           >
-            <Text style={styles.rowLabel}>æ˜µç§°</Text>
+            <Text style={styles.rowLabel}>êÇ³Æ</Text>
             <View style={styles.rowRight}>
               {showNicknameInput ? (
                 <TextInput
@@ -244,7 +244,7 @@ export default function SettingsScreen() {
                 />
               ) : (
                 <>
-                  <Text style={styles.rowValue}>{nickname || "æœªè®¾ç½®"}</Text>
+                  <Text style={styles.rowValue}>{nickname || "Î´ÉèÖÃ"}</Text>
                   <Text style={styles.arrow}>{'>'}</Text>
                 </>
               )}
@@ -259,7 +259,7 @@ export default function SettingsScreen() {
             }}
             activeOpacity={0.6}
           >
-            <Text style={styles.rowLabel}>ç­¾å</Text>
+            <Text style={styles.rowLabel}>Ç©Ãû</Text>
             <View style={styles.rowRight}>
               {showSignatureInput ? (
                 <TextInput
@@ -269,13 +269,13 @@ export default function SettingsScreen() {
                   autoFocus
                   onBlur={handleSaveSignature}
                   onSubmitEditing={handleSaveSignature}
-                  placeholder="å†™ä¸‹ä½ çš„ä¸ªæ€§ç­¾å"
+                  placeholder="Ğ´ÏÂÄãµÄ¸öĞÔÇ©Ãû"
                   placeholderTextColor="#CCC"
                 />
               ) : (
                 <>
                   <Text style={styles.rowValue} numberOfLines={1}>
-                    {signature || "æœªè®¾ç½®"}
+                    {signature || "Î´ÉèÖÃ"}
                   </Text>
                   <Text style={styles.arrow}>{'>'}</Text>
                 </>
@@ -284,41 +284,41 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* --- å¥¹çš„åˆ†èº« --- */}
-        <Text style={styles.sectionHeader}>å¥¹çš„åˆ†èº«</Text>
+        {/* --- ËıµÄ·ÖÉí --- */}
+        <Text style={styles.sectionHeader}>ËıµÄ·ÖÉí</Text>
         <View style={styles.sectionCard}>
           <TouchableOpacity
             style={styles.menuRow}
             onPress={() => router.push("/persona/manage")}
             activeOpacity={0.6}
           >
-            <Text style={styles.rowLabel}>ç®¡ç†åˆ†èº«</Text>
+            <Text style={styles.rowLabel}>¹ÜÀí·ÖÉí</Text>
             <View style={styles.rowRight}>
               <Text style={styles.rowValue}>
                 {personaProfiles.length > 0
-                  ? `${personaProfiles.length} ä¸ªåˆ†èº«`
-                  : "æœªåˆ›å»º"}
+                  ? `${personaProfiles.length} ¸ö·ÖÉí`
+                  : "Î´´´½¨"}
               </Text>
               <Text style={styles.arrow}>{'>'}</Text>
             </View>
           </TouchableOpacity>
         </View>
 
-        {/* --- AI é…ç½® --- */}
-        <Text style={styles.sectionHeader}>AI é…ç½®</Text>
+        {/* --- AI ÅäÖÃ --- */}
+        <Text style={styles.sectionHeader}>AI ÅäÖÃ</Text>
         <View style={styles.sectionCard}>
           <View style={styles.apiKeyRow}>
             <View style={styles.apiKeyInfo}>
               <Text style={styles.rowLabel}>DeepSeek API Key</Text>
               {hasKey ? (
-                <Text style={styles.keyStatus}>å·²é…ç½®</Text>
+                <Text style={styles.keyStatus}>ÒÑÅäÖÃ</Text>
               ) : (
-                <Text style={styles.keyStatusMissing}>æœªé…ç½®</Text>
+                <Text style={styles.keyStatusMissing}>Î´ÅäÖÃ</Text>
               )}
             </View>
             {hasKey ? (
               <TouchableOpacity onPress={handleDeleteKey}>
-                <Text style={styles.deleteKeyText}>åˆ é™¤</Text>
+                <Text style={styles.deleteKeyText}>É¾³ı</Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -340,59 +340,59 @@ export default function SettingsScreen() {
                 onPress={handleSaveKey}
                 disabled={!apiKeyInput.trim()}
               >
-                <Text style={styles.saveKeyButtonText}>ä¿å­˜</Text>
+                <Text style={styles.saveKeyButtonText}>±£´æ</Text>
               </TouchableOpacity>
             </View>
           )}
         </View>
 
-        {/* --- è¡¨æƒ…åŒ… --- */}
-        <Text style={styles.sectionHeader}>è¡¨æƒ…åŒ…</Text>
+        {/* --- ±íÇé°ü --- */}
+        <Text style={styles.sectionHeader}>±íÇé°ü</Text>
         <View style={styles.sectionCard}>
           <TouchableOpacity
             style={styles.menuRow}
             onPress={() => setStickerModalVisible(true)}
             activeOpacity={0.6}
           >
-            <Text style={styles.rowLabel}>ç®¡ç†è¡¨æƒ…åŒ…</Text>
+            <Text style={styles.rowLabel}>¹ÜÀí±íÇé°ü</Text>
             <View style={styles.rowRight}>
-              <Text style={styles.rowValue}>æŸ¥çœ‹/å¯¼å…¥</Text>
+              <Text style={styles.rowValue}>²é¿´/µ¼Èë</Text>
               <Text style={styles.arrow}>{'>'}</Text>
             </View>
           </TouchableOpacity>
         </View>
 
-        {/* --- æ•°æ® --- */}
-        <Text style={styles.sectionHeader}>æ•°æ®</Text>
+        {/* --- Êı¾İ --- */}
+        <Text style={styles.sectionHeader}>Êı¾İ</Text>
         <View style={styles.sectionCard}>
           <View style={styles.menuRow}>
-            <Text style={styles.rowLabel}>å·²å¯¼å…¥æ¶ˆæ¯</Text>
-            <Text style={styles.rowValue}>{messageCount} æ¡</Text>
+            <Text style={styles.rowLabel}>ÒÑµ¼ÈëÏûÏ¢</Text>
+            <Text style={styles.rowValue}>{messageCount} Ìõ</Text>
           </View>
           <RowSeparator />
           <View style={styles.menuRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.rowLabel}>API è°ƒç”¨é¢‘ç‡</Text>
+              <Text style={styles.rowLabel}>API µ÷ÓÃÆµÂÊ</Text>
               <Text style={styles.dataSourceHint}>
-                æ¥æºï¼šå†…å­˜æ»‘åŠ¨çª—å£è®¡æ•°å™¨ï¼ˆApp é‡å¯åé‡ç½®ï¼‰
+                À´Ô´£ºÄÚ´æ»¬¶¯´°¿Ú¼ÆÊıÆ÷£¨App ÖØÆôºóÖØÖÃ£©
               </Text>
             </View>
             <Text style={styles.rowValue}>
-              {rateLimitRemaining} / 50 æ¬¡/å°æ—¶
+              {rateLimitRemaining} / 50 ´Î/Ğ¡Ê±
             </Text>
           </View>
         </View>
 
-        {/* --- å…³äº --- */}
-        <Text style={styles.sectionHeader}>å…³äº</Text>
+        {/* --- ¹ØÓÚ --- */}
+        <Text style={styles.sectionHeader}>¹ØÓÚ</Text>
         <View style={styles.sectionCard}>
           <Text style={styles.disclaimer}>{DISCLAIMER_TEXT}</Text>
         </View>
 
-        <Text style={styles.version}>AI èŠå¤©åˆ†èº« v0.1.0 Â· å†…éƒ¨æµ‹è¯•ç‰ˆ</Text>
+        <Text style={styles.version}>AI ÁÄÌì·ÖÉí v0.1.0 ¡¤ ÄÚ²¿²âÊÔ°æ</Text>
       </ScrollView>
 
-      {/* è¡¨æƒ…åŒ…ç®¡ç†å¼¹çª— */}
+      {/* ±íÇé°ü¹ÜÀíµ¯´° */}
       <StickerPickerModal
         visible={stickerModalVisible}
         onClose={() => setStickerModalVisible(false)}
@@ -425,7 +425,7 @@ const styles = StyleSheet.create({
   },
   cardGap: { height: 12 },
 
-  // è¡Œ
+  // ĞĞ
   profileRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -458,7 +458,7 @@ const styles = StyleSheet.create({
     marginLeft: 20,
   },
 
-  // åˆ†èº«åç§°è¡Œ
+  // ·ÖÉíÃû³ÆĞĞ
   personaNameRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -474,7 +474,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#E5E5E5",
   },
 
-  // ç”¨æˆ·å¤´åƒï¼ˆæ–¹å½¢åœ†è§’ï¼‰
+  // ÓÃ»§Í·Ïñ£¨·½ĞÎÔ²½Ç£©
   userAvatar: {
     width: 56,
     height: 56,
@@ -487,7 +487,7 @@ const styles = StyleSheet.create({
   avatarImg: { width: 56, height: 56, borderRadius: 4 },
   placeholder: { fontSize: 28 },
 
-  // å¥¹å¤´åƒï¼ˆåœ†å½¢ï¼ŒåŒ¹é…Demoï¼‰
+  // ËıÍ·Ïñ£¨Ô²ĞÎ£¬Æ¥ÅäDemo£©
   herAvatar: {
     width: 40,
     height: 40,
@@ -546,7 +546,7 @@ const styles = StyleSheet.create({
   saveKeyButtonDisabled: { opacity: 0.4 },
   saveKeyButtonText: { color: "#FFF", fontSize: 14, fontWeight: "600" },
 
-  // æ•°æ®æ¥æºæ ‡æ³¨
+  // Êı¾İÀ´Ô´±ê×¢
   dataSourceHint: {
     fontSize: 11,
     color: "#BBB",

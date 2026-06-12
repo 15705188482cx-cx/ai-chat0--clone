@@ -1,4 +1,4 @@
-import type { ChatMessage } from "./types";
+﻿import type { ChatMessage } from "./types";
 import { getApiKey } from "../config/apiKeyManager";
 
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
@@ -125,9 +125,7 @@ export async function* streamChat(
         const json = JSON.parse(trimmed.slice(6));
         const delta = json?.choices?.[0]?.delta?.content;
         if (delta) yield delta;
-      } catch {
-        // 解析失败跳过该行
-      }
+      } catch (err) { console.warn("[deepseekService] streamChat JSON 解析失败，跳过该行:", err); }
     }
   }
 }
@@ -138,3 +136,4 @@ export async function* streamChat(
 export async function chatNonStreaming(messages: ChatMessage[]): Promise<string> {
   return rawChatCompletion(messages, { timeout: 25000 });
 }
+

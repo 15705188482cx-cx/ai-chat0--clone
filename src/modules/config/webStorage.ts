@@ -9,7 +9,7 @@ export async function getItemAsync(key: string): Promise<string | null> {
     if (typeof window !== "undefined" && window.localStorage) {
       return localStorage.getItem(key);
     }
-  } catch {}
+  } catch (err) { console.warn("[webStorage] 操作失败:", err); }
   return null;
 }
 
@@ -19,7 +19,7 @@ export async function setItemAsync(key: string, value: string): Promise<void> {
       localStorage.setItem(key, value);
       return;
     }
-  } catch {}
+  } catch (err) { console.warn("[webStorage] 操作失败:", err); }
 }
 
 export async function deleteItemAsync(key: string): Promise<void> {
@@ -28,5 +28,6 @@ export async function deleteItemAsync(key: string): Promise<void> {
       localStorage.removeItem(key);
       return;
     }
-  } catch {}
+  } catch (err) { console.warn("[webStorage] 操作失败:", err); }
 }
+

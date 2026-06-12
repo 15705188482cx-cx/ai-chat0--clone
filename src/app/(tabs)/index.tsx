@@ -1,37 +1,123 @@
-import { useState, useCallback } from "react";
+﻿import { useState, useCallback, useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { getCount } from "../../modules/database/repositories/chatRecordRepo";
-import { getMemoryCount } from "../../modules/database/memoryFallback";
-import { getAllPersonas } from "../../modules/persona/personaService";
+import { getStore } from "../../modules/database/storeProvider";
+import type { IDataStore } from "../../modules/database/IDataStore";
 
+// ========== 常量（规则 3：无魔法值）==========
+/** Web 端轮询间隔（useFocusEffect 在 Web 不可靠时的 fallback） */
+const WEB_POLL_INTERVAL_MS = 2000;
+
+// ========== 样式常量 ==========
 const WECHAT_GREEN = "#07C160";
 const PAGE_BG = "#F3F3F3";
 const HER_PINK = "#FF9EAF";
 
 export default function HomeTabScreen() {
   const router = useRouter();
-  const [stats, setStats] = useState({
-    messageCount: 0,
-    personaCount: 0,
-  });
 
+  // ========== 显式状态类型（规则 4）==========
+  interface HomeStats {
+    messageCount: number;
+    personaCount: number;
+  }
+
+  const [stats, setStats] = useState<HomeStats | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // ========== 数据加载（规则 2：前置条件断言在 store 实现中）==========
   const loadStats = useCallback(async () => {
-    const count = await getCount().catch(() => 0);
-    const total = count || getMemoryCount();
-    const personas = await getAllPersonas().catch(() => []);
-    setStats({
-      messageCount: total,
-      personaCount: personas.length,
-    });
+    try {
+      setLoading(true);
+      setError(null);
+
+      const store: IDataStore = await getStore();
+      const [msgCount, personas] = await Promise.all([
+        store.getChatRecordCount(),
+        store.getAllPersonas(),
+      ]);
+
+      // 规则 2：后置条件断言（防御性检查）
+      if (typeof msgCount !== "number" || msgCount < 0) {
+        throw new Error("getChatRecordCount 返回异常值");
+      }
+      if (!Array.isArray(personas)) {
+        throw new Error("getAllPersonas 返回非数组");
+      }
+
+      setStats({ messageCount: msgCount, personaCount: personas.length });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "未知错误";
+      console.error("[HomeTab] loadStats 失败:", err);
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  // 主加载：useFocusEffect
   useFocusEffect(
     useCallback(() => {
       loadStats();
     }, [loadStats]),
   );
+
+  // Web fallback：visibilitychange + 定时轮询
+  useEffect(() => {
+    // 规则 6（最小实现）：只在 Web 端添加 fallback
+    if (typeof document === "undefined") return;
+
+    const handleVisible = () => {
+      if (document.visibilityState === "visible") {
+        loadStats();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisible);
+    const intervalId = setInterval(loadStats, WEB_POLL_INTERVAL_MS);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisible);
+      clearInterval(intervalId);
+    };
+  }, [loadStats]);
+
+  // ========== 渲染 ==========
+
+  // 初始加载中
+  if (loading && !stats) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.center}>
+          <Text style={styles.tagline}>加载中...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // 错误状态（规则 7：失败快速 — 显示错误而不是空数据）
+  if (error) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.center}>
+          <Text style={styles.errorText}>数据加载失败</Text>
+          <Text style={styles.errorDetail}>{error}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={loadStats}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.retryText}>点击重试</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // 正常渲染
+  const { messageCount, personaCount } = stats!;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -46,9 +132,9 @@ export default function HomeTabScreen() {
 
       {/* 数据概览 */}
       <View style={styles.statsCard}>
-        <StatRow icon="💬" label="已导入消息" value={`${stats.messageCount} 条`} />
+        <StatRow icon="💬" label="已导入消息" value={`${messageCount} 条`} />
         <StatSep />
-        <StatRow icon="👤" label="AI 分身" value={`${stats.personaCount} 个`} />
+        <StatRow icon="👤" label="AI 分身" value={`${personaCount} 个`} />
       </View>
 
       {/* 快捷操作 */}
@@ -65,7 +151,7 @@ export default function HomeTabScreen() {
             <Text style={styles.actionLabel}>导入聊天记录</Text>
             <Text style={styles.actionHint}>导入微信导出的 TXT/JSON</Text>
           </View>
-          <Text style={styles.actionArrow}>{'>'}</Text>
+          <Text style={styles.actionArrow}>{">"}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -79,12 +165,12 @@ export default function HomeTabScreen() {
           <View style={styles.actionInfo}>
             <Text style={styles.actionLabel}>创建 AI 分身</Text>
             <Text style={styles.actionHint}>
-              {stats.messageCount > 0
-                ? `已有 ${stats.messageCount} 条消息可供学习`
+              {messageCount > 0
+                ? `已有 ${messageCount} 条消息可供学习`
                 : "请先导入聊天记录"}
             </Text>
           </View>
-          <Text style={styles.actionArrow}>{'>'}</Text>
+          <Text style={styles.actionArrow}>{">"}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -99,12 +185,12 @@ export default function HomeTabScreen() {
             <Text style={styles.actionLabel}>系统设置</Text>
             <Text style={styles.actionHint}>API Key、个人资料、表情包</Text>
           </View>
-          <Text style={styles.actionArrow}>{'>'}</Text>
+          <Text style={styles.actionArrow}>{">"}</Text>
         </TouchableOpacity>
       </View>
 
-      {/* 底部提示 */}
-      {stats.messageCount === 0 && (
+      {/* 底部提示 — 只在确认 messageCount === 0 时显示 */}
+      {messageCount === 0 && (
         <View style={styles.hintCard}>
           <Text style={styles.hintIcon}>📱</Text>
           <Text style={styles.hintText}>
@@ -115,6 +201,8 @@ export default function HomeTabScreen() {
     </SafeAreaView>
   );
 }
+
+// ========== 子组件 ==========
 
 function StatRow({
   icon,
@@ -138,10 +226,40 @@ function StatSep() {
   return <View style={styles.statSep} />;
 }
 
+// ========== 样式 ==========
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: PAGE_BG,
+  },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 32,
+  },
+  errorText: {
+    fontSize: 16,
+    color: "#E74C3C",
+    fontWeight: "600",
+    marginBottom: 8,
+  },
+  errorDetail: {
+    fontSize: 13,
+    color: "#999999",
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: WECHAT_GREEN,
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
   },
 
   // 头部

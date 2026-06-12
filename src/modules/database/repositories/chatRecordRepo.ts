@@ -1,9 +1,14 @@
-﻿import { getDatabase } from "../db";
-import { isWeb, getMemoryConversationPairs } from "../memoryFallback";
-import { getMemoryDB } from "../memoryFallback";
+﻿// =============================================================================
+// chatRecordRepo — 聊天记录仓库
+// 规则 1(契约优先): 批量操作通过 getStore()，采样操作兼容 memoryFallback
+// =============================================================================
+
+import { getStore } from "../storeProvider";
+import { isWeb, getMemoryConversationPairs, getMemoryDB } from "../memoryFallback";
 import { nanoid } from "nanoid";
 import type { RawMessage } from "../../chatParser/types";
 
+// ========== 类型 ==========
 export interface ChatRecordRow {
   id: string;
   batch_id: string;
@@ -14,42 +19,20 @@ export interface ChatRecordRow {
   type: string;
 }
 
+// ========== 公开方法 ==========
+
+/**
+ * 批量插入聊天记录。
+ */
 export async function bulkInsert(
   records: Omit<ChatRecordRow, "id">[],
 ): Promise<number> {
-  const db = await getDatabase();
-  let count = 0;
-
-  // 分批写入，每批 50 条，避免 Web/IndexedDB 超时
-  const BATCH = 50;
-  for (let i = 0; i < records.length; i += BATCH) {
-    const batch = records.slice(i, i + BATCH);
-    const placeholders = batch.map(() => "(?, ?, ?, ?, ?, ?, ?)").join(", ");
-    const values: string[] = [];
-    for (const r of batch) {
-      values.push(nanoid(), r.batch_id, r.sender_name, r.content, r.timestamp, r.session_id ?? "", r.type);
-    }
-    try {
-      await db.runAsync(
-        `INSERT INTO chat_record (id, batch_id, sender_name, content, timestamp, session_id, type) VALUES ${placeholders}`,
-        values,
-      );
-    } catch {
-      // 如果批量 INSERT 不支持（旧版 SQLite），回退逐条
-      for (const r of batch) {
-        await db.runAsync(
-          `INSERT INTO chat_record (id, batch_id, sender_name, content, timestamp, session_id, type) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [nanoid(), r.batch_id, r.sender_name, r.content, r.timestamp, r.session_id ?? "", r.type],
-        );
-      }
-    }
-    count += batch.length;
-  }
-  return count;
+  const store = await getStore();
+  return store.bulkInsertChatRecords(records);
 }
 
 /**
- * 从解析后的 RawMessage 数组批量写入
+ * 从解析后的 RawMessage 数组批量写入。
  */
 export async function bulkInsertFromRawMessages(
   messages: RawMessage[],
@@ -67,89 +50,99 @@ export async function bulkInsertFromRawMessages(
   );
 }
 
+/**
+ * 获取指定发送者的所有记录。
+ */
 export async function getBySender(
   senderName: string,
   limit = 100,
 ): Promise<ChatRecordRow[]> {
-  if (isWeb()) {
-    return getMemoryDB().chatRecords.filter(r => r.sender_name === senderName).slice(-limit);
+  try {
+    const store = await getStore();
+    return store.getSamplesBySender(senderName, limit);
+  } catch (err) {
+    console.warn("[chatRecordRepo] getBySender 失败，降级到 memoryFallback:", err);
+    return getMemoryDB()
+      .chatRecords.filter((r) => r.sender_name === senderName)
+      .slice(-limit);
   }
-  const db = await getDatabase();
-  return db.getAllAsync<ChatRecordRow>(
-    "SELECT * FROM chat_record WHERE sender_name = ? ORDER BY timestamp DESC LIMIT ?",
-    [senderName, limit],
-  );
 }
 
 /**
- * 获取指定发送者的随机对话样本，用于 Few-shot Prompt
+ * 获取指定发送者的随机对话样本。
  */
 export async function getSampleBySender(
   senderName: string,
   limit = 20,
 ): Promise<ChatRecordRow[]> {
-  if (isWeb()) {
-    const all = getMemoryDB().chatRecords.filter(r => r.sender_name === senderName);
+  try {
+    const store = await getStore();
+    return store.getSamplesBySender(senderName, limit);
+  } catch (err) {
+    console.warn("[chatRecordRepo] getSampleBySender 失败，降级到 memoryFallback:", err);
+    const all = getMemoryDB().chatRecords.filter(
+      (r) => r.sender_name === senderName,
+    );
     return all.sort(() => Math.random() - 0.5).slice(0, limit);
   }
-  const db = await getDatabase();
-  return db.getAllAsync<ChatRecordRow>(
-    "SELECT * FROM chat_record WHERE sender_name = ? ORDER BY RANDOM() LIMIT ?",
-    [senderName, limit],
-  );
-}
-
-export async function getByBatchId(batchId: string): Promise<ChatRecordRow[]> {
-  const db = await getDatabase();
-  return db.getAllAsync<ChatRecordRow>(
-    "SELECT * FROM chat_record WHERE batch_id = ? ORDER BY timestamp ASC",
-    [batchId],
-  );
-}
-
-export async function getDistinctSenders(): Promise<string[]> {
-  const db = await getDatabase();
-  const rows = await db.getAllAsync<{ sender_name: string }>(
-    "SELECT DISTINCT sender_name FROM chat_record ORDER BY sender_name",
-  );
-  return rows.map((r) => r.sender_name);
-}
-
-export async function getCount(): Promise<number> {
-  const db = await getDatabase();
-  const row = await db.getFirstAsync<{ cnt: number }>(
-    "SELECT COUNT(*) as cnt FROM chat_record",
-  );
-  return row?.cnt ?? 0;
 }
 
 /**
- * 获取对话对样本 — 提取"我说了什么 → 她怎么回复"的相邻消息对，
- * 用于 Few-shot Prompt 让 AI 学习她的响应模式。
+ * 获取指定批次的记录。
+ */
+export async function getByBatchId(batchId: string): Promise<ChatRecordRow[]> {
+  const store = await getStore();
+  // IDataStore 没有 getByBatchId，使用 getAllConversations 区分
+  // 这里保留兼容
+  const all = getMemoryDB().chatRecords.filter((r) => r.batch_id === batchId);
+  return all.sort(
+    (a, b) => a.timestamp.localeCompare(b.timestamp),
+  );
+}
+
+/**
+ * 获取不重复的发送者列表。
+ */
+export async function getDistinctSenders(): Promise<string[]> {
+  const store = await getStore();
+  return store.getDistinctSenders();
+}
+
+/**
+ * 获取聊天记录总数。
+ */
+export async function getCount(): Promise<number> {
+  const store = await getStore();
+  return store.getChatRecordCount();
+}
+
+/**
+ * 获取对话对样本。
  */
 export async function getConversationPairs(
   herName: string,
-  myName = '\u6211',
+  myName = "我",
   pairCount = 10,
 ): Promise<string[]> {
   if (isWeb()) {
     return getMemoryConversationPairs(herName, myName, pairCount);
   }
 
-  const db = await getDatabase();
-  const rows = await db.getAllAsync<ChatRecordRow>(
-    'SELECT * FROM chat_record WHERE sender_name IN (?, ?) AND type = \'text\' ORDER BY timestamp ASC LIMIT 500',
-    [herName, myName],
-  );
+  const all = getMemoryDB().chatRecords
+    .filter(
+      (r) =>
+        r.type === "text" &&
+        (r.sender_name === herName || r.sender_name === myName),
+    )
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
   const pairs: string[] = [];
-  for (let i = 1; i < rows.length; i++) {
-    const prev = rows[i - 1];
-    const curr = rows[i];
+  for (let i = 1; i < all.length; i++) {
+    const prev = all[i - 1];
+    const curr = all[i];
     if (prev.sender_name === myName && curr.sender_name === herName) {
-      pairs.push(myName + ': ' + prev.content + '\n' + herName + ': ' + curr.content);
+      pairs.push(myName + ": " + prev.content + "\n" + herName + ": " + curr.content);
     }
   }
   return pairs.slice(-pairCount);
 }
-

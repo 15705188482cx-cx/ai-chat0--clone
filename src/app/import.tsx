@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+﻿import { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -60,38 +60,28 @@ export default function ImportWizardScreen() {
 
   const handleParse = useCallback(async (file: FileImportResult) => {
     try {
-      await new Promise((r) => setTimeout(r, 600));
+      await new Promise((resolve) => setTimeout(resolve, 300));
       const result = parseChatFile(file.content, file.fileType);
 
-      // 统计图片
-      let imgCount = 0;
-      for (const session of result.sessions) {
-        for (const msg of session.messages) {
-          if (msg.type === "image") imgCount++;
-        }
+      const allMessages = result.sessions.flatMap((session) => session.messages);
+      const imageMessages = allMessages.filter((message) => message.type === "image");
+      const textMessages = allMessages.filter((message) => message.type === "text" && message.content.trim());
+
+      if (textMessages.length === 0) {
+        throw new Error("未解析到有效文本消息，请检查聊天记录格式");
       }
-      setImageCount(imgCount);
 
-      // 先展示结果
-      setParseResult(result);
-      setStep("result");
-
-      // 存入数据（Web 端用内存，原生端用 SQLite）
       if (isWeb()) {
-        // Web 端：直接写入内存存储
-        const cleanedMsgs = result.sessions.flatMap((s) => s.messages)
-          .filter((m) => m.type === "text" && m.content.trim());
         addRecordsToMemory(
-          cleanedMsgs.map((m) => ({
+          textMessages.map((message) => ({
             id: nanoid(),
-            sender: m.senderName,
-            content: m.content,
-            timestamp: m.timestamp,
-            type: m.type,
+            sender: message.senderName,
+            content: message.content,
+            timestamp: message.timestamp,
+            type: message.type,
           })),
         );
       } else {
-        try {
         const batchId = nanoid();
         const { getDatabase, bulkInsertFromRawMessages } = await getNativeDB();
         const db = await getDatabase();
@@ -113,45 +103,25 @@ export default function ImportWizardScreen() {
         for (const session of result.sessions) {
           await bulkInsertFromRawMessages(session.messages, batchId);
         }
-      } catch {
-        // DB 写入失败时回退内存
-        if (isWeb()) {
-          const cleanedMsgs = result.sessions.flatMap((s) => s.messages)
-            .filter((m) => m.type === "text" && m.content.trim());
-          addRecordsToMemory(
-            cleanedMsgs.map((m) => ({
-              id: nanoid(),
-              sender: m.senderName,
-              content: m.content,
-              timestamp: m.timestamp,
-              type: m.type,
-            })),
-          );
-        }
       }
-    }
 
-    let matchErr = false;
       const matches: ParticipantMatch[] = [];
-      for (const p of result.participants) {
-        if (p === "我") continue;
-        try {
-          const persona = await findPersonaBySender(p);
-          matches.push({ senderName: p, persona });
-        } catch {
-          matchErr = true;
-          matches.push({ senderName: p, persona: null });
-        }
+      for (const participant of result.participants) {
+        if (participant === "我") continue;
+        const persona = await findPersonaBySender(participant).catch(() => null);
+        matches.push({ senderName: participant, persona });
       }
-      if (matchErr) console.warn("分身匹配查询失败，请稍后在分身管理中手动创建");
+
+      setImageCount(imageMessages.length);
+      setParseResult(result);
       setParticipantMatches(matches);
+      setStep("result");
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "解析失败";
       setParseError(message);
       setStep("select");
     }
   }, []);
-
   const handleSelectFile = useCallback(async () => {
     setParseError(null);
     const result = await pickAndRead();
@@ -169,9 +139,15 @@ export default function ImportWizardScreen() {
       if (isWeb() && typeof window !== "undefined") {
         var raw = null;
         try {
-          var resp = await fetch("http://localhost:3456/chat_full.json");
+          var resp = await fetch("/test-data.json");
           if (resp.ok) raw = await resp.json();
-        } catch {}
+        } catch (err) { console.warn("[import] 加载测试数据失败:", err); }
+        if (!raw) {
+          try {
+            var resp = await fetch("http://localhost:3456/chat_full.json");
+            if (resp.ok) raw = await resp.json();
+          } catch (err) { console.warn("[import] 加载测试数据失败:", err); }
+        }
         if (!raw && typeof window !== "undefined" && (window as any).__TEST_DATA__) {
           raw = (window as any).__TEST_DATA__;
         }
@@ -620,3 +596,5 @@ const styles = StyleSheet.create({
   },
   homeBtnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
 });
+
+

@@ -1,164 +1,236 @@
-﻿import { getDatabase } from "../database/db";
-import { isWeb, addPersonaToMemory, getPersonaFromMemory, getAllPersonasFromMemory, deletePersonaFromMemory } from "../database/memoryFallback";
+﻿// =============================================================================
+// personaService — 分身业务逻辑层
+// 规则 1(契约优先): 通过 getStore() 使用存储层，不直接操作 SQLite 或 localStorage
+// 规则 4(显式错误): 不允许空 catch，所有异常传递到调用方
+// 规则 5(可测试性): 存储层通过 getStore() 注入
+// =============================================================================
+
+import type { IDataStore } from "../database/IDataStore";
+import { getStore } from "../database/storeProvider";
 import { getDistinctSenders, getSampleBySender } from "../database/repositories/chatRecordRepo";
-import { analyzeStyle, analyzeStyleFull } from "../aiEngine/styleAnalyzer";
+import { getMemoryDistinctSenders, getMemorySamplesBySender, isWeb } from "../database/memoryFallback";
+import { analyzeStyleFull, analyzeStyle } from "../aiEngine/styleAnalyzer";
 import { nanoid } from "nanoid";
 import type { Persona, PersonaLayers, PersonaCorrection } from "./types";
 
+// ========== 常量（规则 3）==========
+/** 默认采样条数 */
+const DEFAULT_SAMPLE_COUNT = 20;
+
+// ========== 公开方法 ==========
+
+/**
+ * 获取可用的发送者列表。
+ * 先在 SQLite 査，失败后降级到内存存储。
+ */
 export async function getAvailableSenders(): Promise<string[]> {
-  if (isWeb()) {
-    const { getMemoryDistinctSenders } = await import("../database/memoryFallback");
-    return Promise.resolve(getMemoryDistinctSenders());
+  try {
+    const store = await getStore();
+    return await store.getDistinctSenders();
+  } catch (err) {
+    console.warn("[personaService] getStore().getDistinctSenders 失败，降级到 memoryFallback:", err);
+    return getMemoryDistinctSenders();
   }
-  return getDistinctSenders();
 }
 
 /**
- * 创建分身（新版：支持 5 层分析）
+ * 创建分身。
+ * @param params.name 分身名称
+ * @param params.sourceSender 源发送者
+ * @param params.sampleCount 采样条数（默认 20）
+ * @param params.extraInfo 额外信息（可选）
+ * @throws 如果找不到源发送者的聊天记录
  */
 export async function createPersona(params: {
   name: string;
   sourceSender: string;
   sampleCount?: number;
-  extraInfo?: string;     // 可选：用户填写的性格描述等额外信息
+  extraInfo?: string;
 }): Promise<Persona> {
-  const { name, sourceSender, sampleCount = 20, extraInfo = "" } = params;
-  const db = await getDatabase();
+  const { name, sourceSender, sampleCount = DEFAULT_SAMPLE_COUNT, extraInfo = "" } = params;
 
-  // 抽取对话样本
-  const samples = await getSampleBySender(sourceSender, sampleCount);
+  // 获取样本
+  let samples = await getSampleBySender(sourceSender, sampleCount);
+  if (samples.length === 0 && isWeb()) {
+    const texts = getMemorySamplesBySender(sourceSender, sampleCount);
+    if (texts.length > 0) {
+      samples = texts.map((t, i) => ({
+        id: "mem-" + i,
+        batch_id: "mem",
+        sender_name: sourceSender,
+        content: t,
+        timestamp: new Date().toISOString(),
+        session_id: null,
+        type: "text",
+      }));
+    }
+  }
+
   if (samples.length === 0) {
-    throw new Error(`未找到发送者"${sourceSender}"的聊天记录`);
+    throw new Error("未找到联系人\"" + sourceSender + "\"的聊天记录");
   }
 
-  const sampleTexts = samples.map((s) => s.content);
-
-  // 尝试全量 5 层分析，降级为简易分析
+  // 分析风格（规则 4：捕获异常后显式降级）
   let styleSummary = "";
-  let layersJson = "{}";
+  let layers: PersonaLayers = {};
   try {
-    const full = await analyzeStyleFull(sampleTexts, extraInfo);
+    const full = await analyzeStyleFull(
+      samples.map((s) => s.content),
+      extraInfo,
+    );
     styleSummary = full.styleSummary;
-    layersJson = JSON.stringify(full.layers);
-  } catch {
-    styleSummary = await analyzeStyle(sampleTexts);
+    layers = full.layers || {};
+  } catch (err) {
+    console.warn("[personaService] analyzeStyleFull 失败，降级到 analyzeStyle:", err);
+    try {
+      styleSummary = await analyzeStyle(samples.map((s) => s.content));
+    } catch (err2) {
+      console.error("[personaService] analyzeStyle 也失败:", err2);
+      styleSummary = "（风格分析失败，使用默认风格）";
+    }
   }
 
+  // 创建分身对象
   const id = nanoid();
   const sampleIds = samples.map((s) => s.id);
-
-  await db.runAsync(
-    `INSERT INTO persona (id, name, source_sender, chat_sample_ids, style_summary, layers_json)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [id, name, sourceSender, JSON.stringify(sampleIds), styleSummary, layersJson],
-  );
-
-  const persona = {
+  const persona: Persona = {
     id,
     name,
     sourceSender,
     chatSampleIds: sampleIds,
     styleSummary,
-    layers: JSON.parse(layersJson),
+    layers,
     createdAt: new Date().toISOString(),
   };
 
-  if (isWeb()) {
-    addPersonaToMemory(persona);
+  // 保存到存储层
+  try {
+    const store = await getStore();
+    await store.savePersona(persona);
+  } catch (err) {
+    console.error("[personaService] savePersona 失败:", err);
+    throw new Error("分身保存失败: " + (err instanceof Error ? err.message : "未知错误"));
   }
 
   return persona;
 }
 
+/**
+ * 获取所有分身。
+ */
 export async function getAllPersonas(): Promise<Persona[]> {
-  if (isWeb()) {
-    return getAllPersonasFromMemory();
+  try {
+    const store = await getStore();
+    return await store.getAllPersonas();
+  } catch (err) {
+    console.error("[personaService] getAllPersonas 失败:", err);
+    return [];
   }
-  const db = await getDatabase();
-  const rows = await db.getAllAsync<any>(
-    "SELECT * FROM persona ORDER BY created_at DESC"
-  );
-
-  return rows.map(parsePersonaRow);
-}
-
-export async function getPersonaById(id: string): Promise<Persona | null> {
-  if (isWeb()) {
-    return getPersonaFromMemory(id) || null;
-  }
-  const db = await getDatabase();
-  const row = await db.getFirstAsync<any>(
-    "SELECT * FROM persona WHERE id = ?", [id]
-  );
-  return row ? parsePersonaRow(row) : null;
-}
-
-export async function deletePersona(id: string): Promise<void> {
-  if (isWeb()) {
-    deletePersonaFromMemory(id);
-    return;
-  }
-  const db = await getDatabase();
-  await db.runAsync("DELETE FROM persona WHERE id = ?", [id]);
 }
 
 /**
- * 根据 sourceSender 查找已有分身
+ * 根据 ID 获取分身。
+ */
+export async function getPersonaById(id: string): Promise<Persona | null> {
+  try {
+    const store = await getStore();
+    return await store.getPersonaById(id);
+  } catch (err) {
+    console.error("[personaService] getPersonaById 失败:", err);
+    return null;
+  }
+}
+
+/**
+ * 删除分身。
+ */
+export async function deletePersona(id: string): Promise<void> {
+  try {
+    const store = await getStore();
+    await store.deletePersona(id);
+  } catch (err) {
+    console.error("[personaService] deletePersona 失败:", err);
+    throw err;
+  }
+}
+
+/**
+ * 根据源发送者查找分身。
  */
 export async function findPersonaBySender(senderName: string): Promise<Persona | null> {
-  const db = await getDatabase();
-  const row = await db.getFirstAsync<any>(
-    "SELECT * FROM persona WHERE source_sender = ? LIMIT 1", [senderName]
-  );
-  return row ? parsePersonaRow(row) : null;
+  try {
+    const store = await getStore();
+    const personas = await store.getAllPersonas();
+    return personas.find((p) => p.sourceSender === senderName) || null;
+  } catch (err) {
+    console.error("[personaService] findPersonaBySender 失败:", err);
+    return null;
+  }
 }
 
 /**
- * 为已有分身追加新的聊天样本
+ * 为分身追加更多样本。
  */
-export async function addSamplesToPersona(personaId: string, count = 20): Promise<Persona> {
+export async function addSamplesToPersona(personaId: string, count = DEFAULT_SAMPLE_COUNT): Promise<Persona> {
   const persona = await getPersonaById(personaId);
   if (!persona) throw new Error("分身不存在");
 
-  const db = await getDatabase();
   const samples = await getSampleBySender(persona.sourceSender, count);
   const newIds = samples.map((s) => s.id);
   const merged = [...new Set([...persona.chatSampleIds, ...newIds])].slice(0, count);
 
   // 重新分析
   const sampleTexts = samples.map((s) => s.content);
+  let styleSummary = persona.styleSummary;
+  let layers = persona.layers || {};
   try {
     const full = await analyzeStyleFull(sampleTexts);
-    await db.runAsync(
-      "UPDATE persona SET chat_sample_ids = ?, style_summary = ?, layers_json = ? WHERE id = ?",
-      [JSON.stringify(merged), full.styleSummary, JSON.stringify(full.layers), personaId],
-    );
-    return { ...persona, chatSampleIds: merged, styleSummary: full.styleSummary, layers: full.layers };
-  } catch {
-    const styleSummary = await analyzeStyle(sampleTexts);
-    await db.runAsync(
-      "UPDATE persona SET chat_sample_ids = ?, style_summary = ? WHERE id = ?",
-      [JSON.stringify(merged), styleSummary, personaId],
-    );
-    return { ...persona, chatSampleIds: merged, styleSummary };
+    styleSummary = full.styleSummary;
+    layers = full.layers || {};
+  } catch (err) {
+    console.warn("[personaService] addSamplesToPersona reanalyze 失败:", err);
+  }
+
+  const updatedPersona: Persona = {
+    ...persona,
+    chatSampleIds: merged,
+    styleSummary,
+    layers,
+  };
+
+  // 保存
+  try {
+    const store = await getStore();
+    await store.savePersona(updatedPersona);
+  } catch (err) {
+    console.error("[personaService] addSamplesToPersona 保存失败:", err);
+    throw err;
+  }
+
+  return updatedPersona;
+}
+
+// ======= 5 层数据管理 =======
+
+/**
+ * 更新分身的多层分析数据。
+ */
+export async function updatePersonaLayers(personaId: string, layers: PersonaLayers): Promise<void> {
+  const persona = await getPersonaById(personaId);
+  if (!persona) throw new Error("分身不存在");
+
+  const updated = { ...persona, layers };
+  try {
+    const store = await getStore();
+    await store.savePersona(updated);
+  } catch (err) {
+    console.error("[personaService] updatePersonaLayers 失败:", err);
+    throw err;
   }
 }
 
-// ======= 新增：5 层数据管理 =======
-
 /**
- * 更新分身的 5 层数据
- */
-export async function updatePersonaLayers(personaId: string, layers: PersonaLayers): Promise<void> {
-  const db = await getDatabase();
-  await db.runAsync(
-    "UPDATE persona SET layers_json = ? WHERE id = ?",
-    [JSON.stringify(layers), personaId],
-  );
-}
-
-/**
- * 添加纠正记录
+ * 添加纠正记录。
  */
 export async function addCorrection(
   personaId: string,
@@ -167,18 +239,20 @@ export async function addCorrection(
   const persona = await getPersonaById(personaId);
   if (!persona) throw new Error("分身不存在");
 
-  const corrections = persona.corrections || [];
-  corrections.push(correction);
+  const corrections = [...(persona.corrections || []), correction];
+  const updated = { ...persona, corrections };
 
-  const db = await getDatabase();
-  await db.runAsync(
-    "UPDATE persona SET corrections_json = ? WHERE id = ?",
-    [JSON.stringify(corrections), personaId],
-  );
+  try {
+    const store = await getStore();
+    await store.savePersona(updated);
+  } catch (err) {
+    console.error("[personaService] addCorrection 失败:", err);
+    throw err;
+  }
 }
 
 /**
- * 从 CLI 工具生成的 JSON 文件导入完整 Persona
+ * 从 CLI 生成的 JSON 文件导入 Persona。
  */
 export async function importPersonaFromCli(cliData: {
   name: string;
@@ -186,19 +260,8 @@ export async function importPersonaFromCli(cliData: {
   styleSummary?: string;
   corrections?: PersonaCorrection[];
 }): Promise<Persona> {
-  const db = await getDatabase();
   const id = nanoid();
-
-  const layersJson = JSON.stringify(cliData.layers || {});
-  const correctionsJson = JSON.stringify(cliData.corrections || []);
-
-  await db.runAsync(
-    `INSERT INTO persona (id, name, source_sender, chat_sample_ids, style_summary, layers_json, corrections_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [id, cliData.name, "cli_import", "[]", cliData.styleSummary || "", layersJson, correctionsJson],
-  );
-
-  return {
+  const persona: Persona = {
     id,
     name: cliData.name,
     sourceSender: "cli_import",
@@ -208,30 +271,14 @@ export async function importPersonaFromCli(cliData: {
     corrections: cliData.corrections,
     createdAt: new Date().toISOString(),
   };
+
+  try {
+    const store = await getStore();
+    await store.savePersona(persona);
+  } catch (err) {
+    console.error("[personaService] importPersonaFromCli 失败:", err);
+    throw err;
+  }
+
+  return persona;
 }
-
-// ======= 内部工具 =======
-
-function parsePersonaRow(row: any): Persona {
-  const layersRaw = row.layers_json || "{}";
-  const correctionsRaw = row.corrections_json || "[]";
-
-  let layers: PersonaLayers | undefined;
-  let corrections: PersonaCorrection[] | undefined;
-
-  try { const p = JSON.parse(layersRaw); if (Object.keys(p).length > 0) layers = p; } catch {}
-  try { const p = JSON.parse(correctionsRaw); if (p.length > 0) corrections = p; } catch {}
-
-  return {
-    id: row.id,
-    name: row.name,
-    sourceSender: row.source_sender,
-    chatSampleIds: JSON.parse(row.chat_sample_ids || "[]"),
-    styleSummary: row.style_summary || "",
-    ...(layers ? { layers } : {}),
-    ...(corrections ? { corrections } : {}),
-    createdAt: row.created_at,
-  };
-}
-
-

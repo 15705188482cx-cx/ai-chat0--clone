@@ -8,30 +8,31 @@ const FULL_ANALYSIS_PROMPT = `你是一个专业的性格分析专家。分析�
 聊天记录样本：
 {chatSamples}
 
-请以 JSON 格式输出完整的 5 层分析结果：
+请以 JSON 格式输出。JSON key 必须使用以下字段名：
 
-Layer 0 - 核心行为规则：
-列出 5-8 条具体、可执行的行为规则。每条必须是"在什么情况下会怎么做"的完整表述。
-示例：
-- "生气了不会直接说，而是已读不回、语气从'好呀~'变成'嗯''哦'"
-- "想要什么的时候用撒娇的方式表达：'你说嘛~''人家想吃那个'"
+{
+  "styleSummary": "简洁文本摘要（300字以内，用于旧版兼容）",
+  "layer0": ["具体的1条行为规则", "具体的2条行为规则"],
+  "layer1": { "occupation": "职业推断", "mbti": "MBTI推断" },
+  "layer2": { "catchphrases": ["口头禅"], "highFreqWords": ["高频词"], "styleDesc": "句式特征", "emojiDesc": "Emoji习惯" },
+  "layer3": { "priority": "情感优先级", "dissatisfactionExpr": "表达不满方式" },
+  "layer4": { "withPartner": "和伴侣互动", "underStress": "压力下表现" },
+  "layer5": ["边界与雷区"]
+}
 
-Layer 1 - 身份画像：
-{昵称, 职业推断, MBTI推断, 依恋类型推断}
+分析以下聊天记录，提取说话者的性格特征。
 
-Layer 2 - 表达风格：
-{口头禅列表, 高频词列表, 句式特征, emoji使用, 场景示例}
+Layer 0 - 核心行为规则：列出 5-8 条具体可执行的行为规则，每条必须是完整的"在什么情况下会怎么做"表述。
 
-Layer 3 - 情感逻辑：
-{情感优先级, 表达爱意触发, 退缩触发, 表达不满的方式}
+Layer 1 - 身份画像：昵称, 职业推断, MBTI推断
 
-Layer 4 - 关系行为：
-{和伴侣互动, 压力下的表现}
+Layer 2 - 表达风格：口头禅、高频词、句式特征、emoji使用
 
-Layer 5 - 边界与雷区：
-{抵触的事, 底线, 回避的话题}
+Layer 3 - 情感逻辑：情感优先级、表达不满方式
 
-同时还要一个 styleSummary 字段（简洁的文本摘要，300字以内，用于旧版兼容）。
+Layer 4 - 关系行为：和伴侣互动、压力下表现
+
+Layer 5 - 边界与雷区
 
 只输出 JSON，不要其他文字。`;
 
@@ -67,24 +68,28 @@ export async function analyzeStyleFull(
   try {
     const result = await chatNonStreaming([{ role: "user", content: prompt }]);
     if (result) {
-      const cleaned = result.replace(/^\`\`\`(json)?\s*|\`\`\`$/g, "").trim();
+      // 健壮提取：去掉代码块标记，再取第一个 { 到最后一个 }
+      let cleaned = result.replace(/^```(?:json)?\s*|```$/g, "").trim();
+      const firstBrace = cleaned.indexOf("{");
+      const lastBrace = cleaned.lastIndexOf("}");
+      if (firstBrace >= 0 && lastBrace > firstBrace) {
+        cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+      }
       const parsed = JSON.parse(cleaned);
 
       return {
         styleSummary: parsed.styleSummary || parsed.style_summary || MOCK_STYLE_SUMMARY,
         layers: {
-          layer0: parsed.layer0 || parsed["Layer 0"],
-          layer1: parsed.layer1 || parsed["Layer 1"],
-          layer2: parsed.layer2 || parsed["Layer 2"],
-          layer3: parsed.layer3 || parsed["Layer 3"],
-          layer4: parsed.layer4 || parsed["Layer 4"],
-          layer5: parsed.layer5 || parsed["Layer 5"],
+          layer0: parsed.layer0 || parsed.layer_0 || null,
+          layer1: parsed.layer1 || parsed.layer_1 || null,
+          layer2: parsed.layer2 || parsed.layer_2 || null,
+          layer3: parsed.layer3 || parsed.layer_3 || null,
+          layer4: parsed.layer4 || parsed.layer_4 || null,
+          layer5: parsed.layer5 || parsed.layer_5 || null,
         },
       };
     }
-  } catch {
-    // 解析失败，降级为简易分析
-  }
+  } catch (err) { console.warn("[styleAnalyzer] analyzeStyleFull 失败，降级为简易分析:", err); }
 
   // 降级
   const summary = await analyzeStyle(samples);
@@ -103,9 +108,8 @@ export async function analyzeStyle(samples: string[]): Promise<string> {
   try {
     const result = await chatNonStreaming([{ role: "user", content: prompt }]);
     if (result) return result;
-  } catch {
-    // API 不可用时降级为 mock
-  }
+  } catch (err) { console.warn("[styleAnalyzer] analyzeStyle API 不可用，降级为 mock:", err); }
 
   return MOCK_STYLE_SUMMARY;
 }
+

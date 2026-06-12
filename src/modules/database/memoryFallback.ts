@@ -1,14 +1,27 @@
 ﻿/**
- * Web 端内存 fallback 存储。
- * 用于替代 expo-sqlite，当 DB 不可用时自动切换。
- * 数据仅在内存中，刷新页面即消失。
+ * Web 端持久化 fallback 存储。
+ * 用于替代 expo-sqlite 的开发/预览环境，数据保存在 localStorage。
  */
 
 import { Platform } from "react-native";
-import type { RawMessage } from "../chatParser/types";
 import type { Persona } from "../persona/types";
 
-// ======= 聊天记录存储（已有） =======
+interface MemoryConversation {
+  id: string;
+  persona_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface MemoryMessage {
+  id: string;
+  conversation_id: string;
+  role: "user" | "persona";
+  text_content: string;
+  sticker_id: string | null;
+  created_at: string;
+}
 
 interface MemoryDB {
   chatRecords: Array<{
@@ -21,160 +34,217 @@ interface MemoryDB {
     type: string;
   }>;
   personas: Map<string, Persona>;
-  conversations: Map<string, {
-    id: string;
-    persona_id: string;
-    title: string;
-    created_at: string;
-    updated_at: string;
-  }>;
-  messages: Map<string, Array<{
-    id: string;
-    conversation_id: string;
-    role: "user" | "persona";
-    text_content: string;
-    sticker_id: string | null;
-    created_at: string;
-  }>>;
+  conversations: Map<string, MemoryConversation>;
+  messages: Map<string, MemoryMessage[]>;
 }
 
-let memoryDB: MemoryDB = {
-  chatRecords: [],
-  personas: new Map(),
-  conversations: new Map(),
-  messages: new Map(),
-};
+interface SerializedMemoryDB {
+  chatRecords: MemoryDB["chatRecords"];
+  personas: Persona[];
+  conversations: MemoryConversation[];
+  messages: Array<[string, MemoryMessage[]]>;
+}
+
+const STORAGE_KEY = "AI_CHAT_CLONE_WEB_DB_V1";
+
+let memoryDB: MemoryDB = createEmptyMemoryDB();
+let hasHydrated = false;
+
+function createEmptyMemoryDB(): MemoryDB {
+  return {
+    chatRecords: [],
+    personas: new Map(),
+    conversations: new Map(),
+    messages: new Map(),
+  };
+}
+
+function canUseLocalStorage(): boolean {
+  return Platform.OS === "web" && typeof globalThis !== "undefined" && "localStorage" in globalThis;
+}
+
+function serialize(db: MemoryDB): SerializedMemoryDB {
+  return {
+    chatRecords: db.chatRecords,
+    personas: Array.from(db.personas.values()),
+    conversations: Array.from(db.conversations.values()),
+    messages: Array.from(db.messages.entries()),
+  };
+}
+
+function deserialize(raw: SerializedMemoryDB): MemoryDB {
+  return {
+    chatRecords: Array.isArray(raw.chatRecords) ? raw.chatRecords : [],
+    personas: new Map((raw.personas || []).map((persona) => [persona.id, persona])),
+    conversations: new Map((raw.conversations || []).map((conversation) => [conversation.id, conversation])),
+    messages: new Map(raw.messages || []),
+  };
+}
+
+function hydrateMemoryDB(): void {
+  if (hasHydrated) return;
+  hasHydrated = true;
+  if (!canUseLocalStorage()) return;
+
+  try {
+    const raw = globalThis.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    memoryDB = deserialize(JSON.parse(raw));
+  } catch {
+    memoryDB = createEmptyMemoryDB();
+  }
+}
+
+function persistMemoryDB(): void {
+  if (!canUseLocalStorage()) return;
+  try {
+    globalThis.localStorage.setItem(STORAGE_KEY, JSON.stringify(serialize(memoryDB)));
+  } catch {
+    // localStorage quota errors should not crash the app.
+  }
+}
 
 export function isWeb(): boolean {
   return Platform.OS === "web";
 }
 
 export function getMemoryDB(): MemoryDB {
+  hydrateMemoryDB();
   return memoryDB;
 }
 
 export function resetMemoryDB(): void {
-  memoryDB = { chatRecords: [], personas: new Map(), conversations: new Map(), messages: new Map() };
-}
-
-export function addRecordsToMemory(records: Array<{ id: string; sender: string; content: string; timestamp: Date; type: string }>): void {
-  const batchId = "web-batch";
-  for (const r of records) {
-    memoryDB.chatRecords.push({
-      id: r.id,
-      batch_id: batchId,
-      sender_name: r.sender,
-      content: r.content,
-      timestamp: r.timestamp.toISOString(),
-      session_id: null,
-      type: r.type,
-    });
+  memoryDB = createEmptyMemoryDB();
+  hasHydrated = true;
+  if (canUseLocalStorage()) {
+    globalThis.localStorage.removeItem(STORAGE_KEY);
   }
 }
 
+export function addRecordsToMemory(records: Array<{ id: string; sender: string; content: string; timestamp: Date; type: string }>): void {
+  hydrateMemoryDB();
+  const batchId = "web-batch-" + Date.now();
+  for (const record of records) {
+    memoryDB.chatRecords.push({
+      id: record.id,
+      batch_id: batchId,
+      sender_name: record.sender,
+      content: record.content,
+      timestamp: record.timestamp.toISOString(),
+      session_id: null,
+      type: record.type,
+    });
+  }
+  persistMemoryDB();
+}
+
 export function getMemoryDistinctSenders(): string[] {
-  return [...new Set(memoryDB.chatRecords.map((r) => r.sender_name))];
+  hydrateMemoryDB();
+  return [...new Set(memoryDB.chatRecords.map((record) => record.sender_name))];
 }
 
 export function getMemoryCount(): number {
+  hydrateMemoryDB();
   return memoryDB.chatRecords.length;
 }
 
 export function getMemorySamplesBySender(senderName: string, limit = 20): string[] {
+  hydrateMemoryDB();
   return memoryDB.chatRecords
-    .filter((r) => r.sender_name === senderName)
+    .filter((record) => record.sender_name === senderName)
     .sort(() => Math.random() - 0.5)
     .slice(0, limit)
-    .map((r) => r.content);
+    .map((record) => record.content);
 }
 
-// ======= Web 端 Persona 存储 =======
-
 export function addPersonaToMemory(persona: Persona): void {
+  hydrateMemoryDB();
   memoryDB.personas.set(persona.id, persona);
+  persistMemoryDB();
 }
 
 export function getPersonaFromMemory(id: string): Persona | undefined {
+  hydrateMemoryDB();
   return memoryDB.personas.get(id);
 }
 
 export function getAllPersonasFromMemory(): Persona[] {
+  hydrateMemoryDB();
   return Array.from(memoryDB.personas.values());
 }
 
 export function deletePersonaFromMemory(id: string): void {
+  hydrateMemoryDB();
   memoryDB.personas.delete(id);
+  for (const conversation of Array.from(memoryDB.conversations.values())) {
+    if (conversation.persona_id === id) {
+      memoryDB.conversations.delete(conversation.id);
+      memoryDB.messages.delete(conversation.id);
+    }
+  }
+  persistMemoryDB();
 }
 
-// ======= Web 端 Conversation 存储 =======
-
-export function addConversationToMemory(conv: {
-  id: string;
-  persona_id: string;
-  title: string;
-  created_at: string;
-  updated_at: string;
-}): void {
-  memoryDB.conversations.set(conv.id, conv);
+export function addConversationToMemory(conversation: MemoryConversation): void {
+  hydrateMemoryDB();
+  memoryDB.conversations.set(conversation.id, conversation);
+  persistMemoryDB();
 }
 
-export function getConversationFromMemory(id: string) {
+export function getConversationFromMemory(id: string): MemoryConversation | undefined {
+  hydrateMemoryDB();
   return memoryDB.conversations.get(id);
 }
 
-export function getAllConversationsFromMemory() {
+export function getAllConversationsFromMemory(): MemoryConversation[] {
+  hydrateMemoryDB();
   return Array.from(memoryDB.conversations.values());
 }
 
 export function updateConversationInMemory(id: string, updates: Partial<{ title: string; updated_at: string }>): void {
+  hydrateMemoryDB();
   const existing = memoryDB.conversations.get(id);
   if (existing) {
     Object.assign(existing, updates);
+    persistMemoryDB();
   }
 }
 
-// ======= Web 端 Message 存储 =======
-
-export function addMessageToMemory(msg: {
-  id: string;
-  conversation_id: string;
-  role: "user" | "persona";
-  text_content: string;
-  sticker_id: string | null;
-  created_at: string;
-}): void {
-  const existing = memoryDB.messages.get(msg.conversation_id) || [];
-  existing.push(msg);
-  memoryDB.messages.set(msg.conversation_id, existing);
-  // 更新会话时间
-  const conv = memoryDB.conversations.get(msg.conversation_id);
-  if (conv) conv.updated_at = msg.created_at;
+export function addMessageToMemory(message: MemoryMessage): void {
+  hydrateMemoryDB();
+  const existing = memoryDB.messages.get(message.conversation_id) || [];
+  existing.push(message);
+  memoryDB.messages.set(message.conversation_id, existing);
+  const conversation = memoryDB.conversations.get(message.conversation_id);
+  if (conversation) conversation.updated_at = message.created_at;
+  persistMemoryDB();
 }
 
-export function getMessagesFromMemory(conversationId: string, limit = 50) {
-  const msgs = memoryDB.messages.get(conversationId) || [];
-  return msgs.slice(-limit);
+export function getMessagesFromMemory(conversationId: string, limit = 50): MemoryMessage[] {
+  hydrateMemoryDB();
+  const messages = memoryDB.messages.get(conversationId) || [];
+  return messages.slice(-limit);
 }
 
-export function getLatestMessagesFromMemory(conversationId: string, limit = 20) {
-  const msgs = memoryDB.messages.get(conversationId) || [];
-  return msgs.slice(-limit).reverse();
+export function getLatestMessagesFromMemory(conversationId: string, limit = 20): MemoryMessage[] {
+  hydrateMemoryDB();
+  const messages = memoryDB.messages.get(conversationId) || [];
+  return messages.slice(-limit).reverse();
 }
 
-/** Web 端对话对提取 — 从内存 chatRecords 中提取"我说→她回"的相邻对 */
 export function getMemoryConversationPairs(herName: string, myName = "我", pairCount = 10): string[] {
+  hydrateMemoryDB();
   const records = memoryDB.chatRecords
-    .filter((r) => r.type === "text" && (r.sender_name === herName || r.sender_name === myName))
-    .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    .filter((record) => record.type === "text" && (record.sender_name === herName || record.sender_name === myName))
+    .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
 
   const pairs: string[] = [];
-  for (let i = 1; i < records.length; i++) {
-    const prev = records[i - 1];
-    const curr = records[i];
-    if (prev.sender_name === myName && curr.sender_name === herName) {
-      pairs.push(`${myName}: ${prev.content}\n${herName}: ${curr.content}`);
+  for (let index = 1; index < records.length; index += 1) {
+    const previous = records[index - 1];
+    const current = records[index];
+    if (previous.sender_name === myName && current.sender_name === herName) {
+      pairs.push(`${myName}: ${previous.content}\n${herName}: ${current.content}`);
     }
   }
   return pairs.slice(-pairCount);
 }
-

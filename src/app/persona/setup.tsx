@@ -11,7 +11,7 @@ import {
   Image,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import * as SecureStore from "../../modules/config/webStorage";
+import * as webStorage from "../../modules/config/webStorage";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -21,12 +21,9 @@ import {
 import { getSampleBySender } from "../../modules/database/repositories/chatRecordRepo";
 import {
   getMemoryDistinctSenders,
-  addPersonaToMemory,
   getMemorySamplesBySender,
-  isWeb,
 } from "../../modules/database/memoryFallback";
-import { analyzeStyleFull, analyzeStyle } from "../../modules/aiEngine/styleAnalyzer";
-import type { Persona } from "../../modules/persona/types";
+import { analyzeStyleFull } from "../../modules/aiEngine/styleAnalyzer";
 import { useChatStore } from "../../stores/chatStore";
 
 const WECHAT_GREEN = "#07C160";
@@ -37,7 +34,7 @@ const PINK = "#FFE4E1";
 export default function PersonaSetupScreen() {
   const router = useRouter();
   const { preSelectedSender } = useLocalSearchParams<{ preSelectedSender?: string }>();
-  const { initConversation, setPersonaAndInitConversation } = useChatStore();
+  const { setPersonaAndInitConversation } = useChatStore();
 
   const [senders, setSenders] = useState<string[]>([]);
   const [selectedSender, setSelectedSender] = useState<string | null>(null);
@@ -157,43 +154,24 @@ export default function PersonaSetupScreen() {
     setError(null);
     try {
       const name = personaName.trim() || selectedSender;
-
-      let persona: Persona;
-      if (isWeb()) {
-        // Web 端：跳过 DB，直接用内存数据创建分身
-        persona = {
-          id: "web-persona-" + Date.now(),
-          name,
-          sourceSender: selectedSender,
-          chatSampleIds: [],
-          styleSummary: styleSummary ?? "（从内存分析）",
-          createdAt: new Date().toISOString(),
-        };
-        addPersonaToMemory(persona);
-      } else {
-        persona = await createPersona({
-          name,
-          sourceSender: selectedSender,
-          sampleCount: 20,
-          extraInfo: personaExtraInfo,
-        });
-      }
+      const persona = await createPersona({
+        name,
+        sourceSender: selectedSender,
+        sampleCount: 20,
+        extraInfo: personaExtraInfo,
+      });
 
       if (avatarUri) {
-        await SecureStore.setItemAsync(
-          `persona_avatar_${persona.id}`,
-          avatarUri,
-        );
+        await webStorage.setItemAsync(`persona_avatar_${persona.id}`, avatarUri);
       }
       if (personaSignature.trim()) {
-        await SecureStore.setItemAsync(
-          `persona_signature_${persona.id}`,
-          personaSignature.trim(),
-        );
+        await webStorage.setItemAsync(`persona_signature_${persona.id}`, personaSignature.trim());
       }
 
-      if (isWeb()) { await setPersonaAndInitConversation(persona); } else { await initConversation(persona.id); }
-      router.replace(`/chat/${useChatStore.getState().conversationId}`);
+      await setPersonaAndInitConversation(persona);
+      const conversationId = useChatStore.getState().conversationId;
+      if (!conversationId) throw new Error("会话创建失败");
+      router.replace(`/chat/${conversationId}`);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "创建失败";
       setError(msg);
@@ -205,11 +183,10 @@ export default function PersonaSetupScreen() {
     personaName,
     personaSignature,
     avatarUri,
-    initConversation,
+    personaExtraInfo,
     setPersonaAndInitConversation,
     router,
   ]);
-
   if (loading) {
     return (
       <SafeAreaView style={styles.center}>
@@ -639,4 +616,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
+
+
+
 

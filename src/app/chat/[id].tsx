@@ -149,22 +149,47 @@ export default function ChatScreen() {
 
   // ========== 初始化 ==========
   useEffect(() => {
-    if (!id) return;
-    const { persona, conversationId } = useChatStore.getState();
-    if (persona && conversationId === id) {
-      // 已从 setup 页面初始化完成，直接加载消息
-      loadMessages();
-    } else {
-      // 从会话列表进入，需要根据 conversationId 查询
-      loadFromConversationId(id).then(() => loadMessages()).catch((e) => {
-        console.warn('加载会话失败:', e.message);
-      });
+    let mounted = true;
+
+    async function initializeConversation() {
+      if (!id) return;
+      const currentState = useChatStore.getState();
+      try {
+        if (currentState.persona && currentState.conversationId === id) {
+          await loadMessages();
+          return;
+        }
+        await loadFromConversationId(id);
+        if (mounted) await loadMessages();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "会话加载失败";
+        useChatStore.setState({
+          conversationId: null,
+          persona: null,
+          isThinking: false,
+          messages: [
+            {
+              id: `conversation-load-error-${Date.now()}`,
+              role: "persona",
+              text: `⚠️ ${message}\n\n这通常是 Web 端刷新后旧会话丢失导致的。请返回首页重新进入会话，或重新导入聊天记录。`,
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        });
+      }
+    }
+
+    initializeConversation();
+    return () => {
+      mounted = false;
+    };
+  }, [id, loadFromConversationId, loadMessages]);
+
   useEffect(() => {
     if (messages.length > 0) {
       flatListRef.current?.scrollToEnd({ animated: true });
     }
   }, [messages]);
-
   // ========== 消息操作 ==========
   const handleSend = useCallback(() => {
     const text = inputText.trim();
@@ -589,6 +614,7 @@ const styles = StyleSheet.create({
   correctionSubmitBtn: { backgroundColor: "#07C160", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
   correctionSubmitText: { fontSize: 15, color: "#FFF", fontWeight: "600" }
 });
+
 
 
 
