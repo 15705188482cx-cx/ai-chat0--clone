@@ -1,4 +1,4 @@
-// =============================================================================
+﻿// =============================================================================
 // NativeStore — IDataStore 的 Native (expo-sqlite) 实现
 // 规则 1(契约优先): 实现 IDataStore 所有方法
 // 规则 2(不变式断言): 前置条件检查
@@ -7,6 +7,8 @@
 
 import { nanoid } from "nanoid";
 import type { Persona } from "../persona/types";
+import type { Memories } from "../persona/memoriesTypes";
+import { createEmptyMemories } from "../persona/memoriesAnalyzer";
 import type {
   IDataStore,
   ChatRecordRow,
@@ -18,6 +20,16 @@ import {
   StoreNotReadyError,
   InvalidArgumentError,
 } from "./IDataStore";
+
+// ========== 本地 SQLite 数据库接口类型（避免 TS2347 untyped function calls）==========
+/** expo-sqlite 数据库实例的最小接口定义 */
+interface SQLiteDatabase {
+  execAsync(sql: string): Promise<void>;
+  runAsync(sql: string, params?: readonly unknown[]): Promise<{ changes: number; lastInsertRowId: number | bigint }>;
+  getAllAsync<T = Record<string, unknown>>(sql: string, params?: readonly unknown[]): Promise<T[]>;
+  getFirstAsync<T = Record<string, unknown>>(sql: string, params?: readonly unknown[]): Promise<T | null>;
+}
+
 
 // ========== Schema 常量（规则 3：无魔法值）==========
 const SCHEMA_SQL = `
@@ -77,7 +89,7 @@ CREATE TABLE IF NOT EXISTS sticker (
 const BULK_INSERT_BATCH_SIZE = 50;
 
 /** 迁移 — 添加可能缺失的列 */
-async function runMigrations(database: any): Promise<void> {
+async function runMigrations(database: SQLiteDatabase): Promise<void> {
   const addColIfMissing = async (
     table: string,
     col: string,
@@ -107,7 +119,7 @@ async function runMigrations(database: any): Promise<void> {
  * 适用于 Android/iOS 原生环境。
  */
 export class NativeStore implements IDataStore {
-  private db: any | null = null;
+  private db: SQLiteDatabase | null = null;
   private initialized = false;
   private _sqliteModule: any = null;
 
@@ -115,9 +127,10 @@ export class NativeStore implements IDataStore {
     if (this.initialized && this.db) return;
     try {
       const sqlite = await this.getSQLite();
-      this.db = await sqlite.openDatabaseAsync("chat.db");
-      await this.db.execAsync(SCHEMA_SQL);
-      await runMigrations(this.db);
+      const database = await sqlite.openDatabaseAsync("chat.db");
+      this.db = database;
+      await database.execAsync(SCHEMA_SQL);
+      await runMigrations(database);
       this.initialized = true;
     } catch (err) {
       console.error("[NativeStore] SQLite 初始化失败:", err);
@@ -450,4 +463,16 @@ export class NativeStore implements IDataStore {
       createdAt: row.created_at,
     };
   }
+
+  // ======== Memories (in-memory fallback) ========
+  private _memoriesCache: Record<string, Memories> = {};
+
+  async getMemories(personaId: string): Promise<Memories> {
+    return this._memoriesCache[personaId] || createEmptyMemories();
+  }
+
+  async saveMemories(personaId: string, memories: Memories): Promise<void> {
+    this._memoriesCache[personaId] = memories;
+  }
+
 }

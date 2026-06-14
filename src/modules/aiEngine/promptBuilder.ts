@@ -1,4 +1,6 @@
 ﻿import type { Persona, PersonaLayers } from "../persona/types";
+import type { Memories } from "../persona/memoriesTypes";
+import { buildMemoriesContext } from "../persona/memoriesBuilder";
 import type { ChatMessage } from "./types";
 import { trimFewShotSamples } from "./contextManager";
 
@@ -93,7 +95,7 @@ function buildCorrectionsPrompt(corrections: Persona["corrections"]): string {
 ${corrections.map(c => `- 在「${c.scene}」时：不应该 ${c.wrongBehavior}，应该 ${c.correctBehavior}`).join("\n")}`;
 }
 
-function buildLayerSystemPrompt(persona: Persona): string {
+function buildLayerSystemPrompt(persona: Persona, memories?: Memories | null): string {
   const parts = [];
   const l = persona.layers || {};
 
@@ -125,6 +127,17 @@ function buildLayerSystemPrompt(persona: Persona): string {
   const corr = buildCorrectionsPrompt(persona.corrections);
   if (corr) parts.push(corr);
 
+  // 注入共同记忆
+  if (memories && memories.meta.sourceCount > 0) {
+    const memContext = buildMemoriesContext(memories);
+    if (memContext) {
+      parts.push(
+        "【你们之间的共同记忆（在对话中自然流露，不要生硬背诵）】"
+        + memContext
+      );
+    }
+  }
+
   // 通用规则
   parts.push(`
 【通用回复规则】
@@ -137,10 +150,10 @@ function buildLayerSystemPrompt(persona: Persona): string {
 }
 
 // ======= 对外接口 =======
-export function buildSystemPrompt(persona: Persona): string {
+export function buildSystemPrompt(persona: Persona, memories?: Memories | null): string {
   // 如果有 5 层数据，用新版；否则用旧版兼容
   if (persona.layers) {
-    return buildLayerSystemPrompt(persona);
+    return buildLayerSystemPrompt(persona, memories);
   }
   return LEGACY_SYSTEM_PROMPT.replace("{personaName}", persona.name).replace(
     "{styleSummary}",
@@ -161,8 +174,9 @@ export function buildMessages(
   chatSamples: string[],
   history: Array<{ role: "user" | "persona"; text: string }>,
   userMessage: string,
+  memories?: Memories | null,
 ): ChatMessage[] {
-  const systemContent = buildSystemPrompt(persona);
+  const systemContent = buildSystemPrompt(persona, memories);
   const fewshotContent = buildFewShotPrompt(persona, chatSamples);
 
   const historyMessages: ChatMessage[] = history.map((m) => ({

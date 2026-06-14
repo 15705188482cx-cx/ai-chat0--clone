@@ -1,0 +1,9 @@
+﻿{
+  "mcpServers": {
+    "wechat": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["G:/2026Work/AIchat/wechat-decrypt/mcp_server.py"]
+    }
+  }
+}

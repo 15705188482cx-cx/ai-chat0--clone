@@ -1,4 +1,4 @@
-// =============================================================================
+﻿// =============================================================================
 // personaService — 分身业务逻辑层
 // 规则 1(契约优先): 通过 getStore() 使用存储层，不直接操作 SQLite 或 localStorage
 // 规则 4(显式错误): 不允许空 catch，所有异常传递到调用方
@@ -11,6 +11,10 @@ import { getDistinctSenders, getSampleBySender } from "../database/repositories/
 import { analyzeStyleFull, analyzeStyle } from "../aiEngine/styleAnalyzer";
 import { nanoid } from "nanoid";
 import type { Persona, PersonaLayers, PersonaCorrection } from "./types";
+import type { Memories } from "./memoriesTypes";
+import { createEmptyMemories } from "./memoriesAnalyzer";
+import type { VersionSnapshot } from "./versionManager";
+import { createSnapshot, getVersionHistory, rollbackToVersion, getLatestVersion } from "./versionManager";
 
 // ========== 常量（规则 3）==========
 /** 默认采样条数 */
@@ -196,6 +200,58 @@ export async function addCorrection(
 /**
  * 从 CLI 生成的 JSON 文件导入 Persona。
  */
+/**
+ * 通过纯文本描述创建分身（无需聊天记录）。
+ * @param params.name 分身名称
+ * @param params.description 文字描述（性格、风格、基本信息等）
+ * @param params.extraInfo 额外信息（可选）
+ */
+export async function createPersonaFromText(params: {
+  name: string;
+  description: string;
+  extraInfo?: string;
+}): Promise<Persona> {
+  const { name, description, extraInfo = "" } = params;
+
+  // 通过 AI 分析描述文本，生成风格摘要
+  let styleSummary = "";
+  let layers: PersonaLayers = {};
+  try {
+    const full = await analyzeStyleFull([description], extraInfo);
+    styleSummary = full.styleSummary;
+    layers = full.layers || {};
+  } catch (err) {
+    console.warn("[personaService] createPersonaFromText analyzeStyleFull failed:", err);
+    try {
+      styleSummary = await analyzeStyle([description]);
+    } catch (err2) {
+      console.error("[personaService] createPersonaFromText analyzeStyle also failed:", err2);
+      styleSummary = "（基于文字描述生成，无聊天记录分析）";
+    }
+  }
+
+  const id = nanoid();
+  const persona: Persona = {
+    id,
+    name,
+    sourceSender: "manual_input",
+    chatSampleIds: [],
+    styleSummary,
+    layers,
+    createdAt: new Date().toISOString(),
+  };
+
+  try {
+    const store = await getStore();
+    await store.savePersona(persona);
+  } catch (err) {
+    console.error("[personaService] createPersonaFromText savePersona failed:", err);
+    throw new Error("分身保存失败: " + (err instanceof Error ? err.message : "未知错误"));
+  }
+
+  return persona;
+}
+
 export async function importPersonaFromCli(cliData: {
   name: string;
   layers: PersonaLayers;
@@ -218,4 +274,72 @@ export async function importPersonaFromCli(cliData: {
   await store.savePersona(persona);
 
   return persona;
+}
+
+
+// ======== 记忆管理（通过 IDataStore）========
+
+/**
+ * 获取 Persona 关联的记忆。
+ * @param personaId 分身 ID
+ * @returns Memories 对象，不存在时返回空 Memories
+ */
+export async function getMemories(personaId: string): Promise<Memories> {
+  const store = await getStore();
+  return store.getMemories(personaId);
+}
+
+/**
+ * 保存 Persona 关联的记忆。
+ * @param personaId 分身 ID
+ * @param memories 记忆对象
+ */
+export async function saveMemories(personaId: string, memories: Memories): Promise<void> {
+  const store = await getStore();
+  await store.saveMemories(personaId, memories);
+}
+
+// ======== 版本管理 ========
+
+/**
+ * 为 Persona 创建快照（包含当前 persona 数据和记忆数据）。
+ * @param personaId 分身 ID
+ * @param changeDescription 变更说明（可选）
+ * @returns 创建的 VersionSnapshot
+ */
+export async function snapshotPersona(personaId: string, changeDescription?: string): Promise<VersionSnapshot> {
+  const store = await getStore();
+  const persona = await store.getPersonaById(personaId);
+  if (!persona) throw new Error("分身 " + personaId + " 不存在，无法创建快照");
+
+  const memories = await store.getMemories(personaId);
+  return createSnapshot(persona, memories, changeDescription || "手动快照 " + new Date().toISOString());
+}
+
+/**
+ * 获取 Persona 的版本历史。
+ * @param personaId 分身 ID
+ * @returns VersionSnapshot 数组
+ */
+export async function getPersonaVersionHistory(personaId: string): Promise<VersionSnapshot[]> {
+  return getVersionHistory(personaId);
+}
+
+/**
+ * 回滚 Persona 到指定版本。
+ * @param personaId 分身 ID
+ * @param version 目标版本号
+ * @returns 回滚后的 Persona
+ */
+export async function rollbackPersona(personaId: string, version: number): Promise<Persona> {
+  const store = await getStore();
+  const result = rollbackToVersion(personaId, version);
+  if (!result) throw new Error("版本 " + version + " 不存在");
+
+  // 回滚 persona 数据
+  await store.savePersona(result.persona);
+  // 回滚记忆数据
+  await store.saveMemories(personaId, result.memories);
+
+  return result.persona;
 }

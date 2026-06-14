@@ -215,7 +215,7 @@ export default function ImportWizardScreen() {
             <Text style={styles.emoji}>📂</Text>
             <Text style={styles.title}>导入聊天记录</Text>
             <Text style={styles.subtitle}>
-              支持微信导出的 TXT 和 JSON 格式{"\n"}文件大小不超过 50MB
+              支持 CSV / TXT / JSON / HTML 格式{"\n"}文件大小不超过 50MB
             </Text>
             <TouchableOpacity
               style={styles.primaryBtn}
@@ -226,8 +226,15 @@ export default function ImportWizardScreen() {
               {isImporting ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.primaryBtnText}>选择文件</Text>
+                <Text style={styles.primaryBtnText}>📂 选择文件</Text>
               )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.primaryBtn, { backgroundColor: '#4A90D9', marginTop: 12 }]}
+              onPress={() => router.push('/screenshot-import')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.primaryBtnText}>📸 截图导入</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.testDataBtn}

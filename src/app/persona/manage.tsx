@@ -1,18 +1,22 @@
-import { useState, useCallback } from "react";
+﻿import { useState, useCallback } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TextInput,
+  Modal,
   Alert,
   Image,
+  ActivityIndicator,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
-import * as SecureStore from "expo-secure-store";
-import { getAllPersonas, deletePersona } from "../../modules/persona/personaService";
+import * as webStorage from "../../modules/config/webStorage";
+import { getAllPersonas, deletePersona, addSamplesToPersona, addCorrection } from "../../modules/persona/personaService";
+import { parseCorrection } from "../../modules/persona/correctionHandler";
 import type { Persona } from "../../modules/persona/types";
 
 const WECHAT_GREEN = "#07C160";
@@ -28,12 +32,70 @@ export default function PersonaManageScreen() {
   const router = useRouter();
   const [profiles, setProfiles] = useState<PersonaProfile[]>([]);
 
+  // 追加聊天记录弹窗
+  const [appendModalVisible, setAppendModalVisible] = useState(false);
+  const [appendPersonaId, setAppendPersonaId] = useState<string>("");
+  const [appending, setAppending] = useState(false);
+
+  // 纠正行为弹窗
+  const [correctionModalVisible, setCorrectionModalVisible] = useState(false);
+  const [correctionPersonaId, setCorrectionPersonaId] = useState<string>("");
+  const [correctionInput, setCorrectionInput] = useState("");
+  const [submittingCorrection, setSubmittingCorrection] = useState(false);
+
+  const handleAppendRecords = useCallback(async () => {
+    if (!appendPersonaId) return;
+    setAppending(true);
+    try {
+      await addSamplesToPersona(appendPersonaId, 20);
+      Alert.alert("成功", "已追加分析 20 条新记录");
+      setAppendModalVisible(false);
+      load();
+    } catch (err) {
+      Alert.alert("失败", err instanceof Error ? err.message : "未知错误");
+    } finally {
+      setAppending(false);
+    }
+  }, [appendPersonaId]);
+
+  const handleOpenAppend = useCallback((personaId: string) => {
+    setAppendPersonaId(personaId);
+    setAppendModalVisible(true);
+  }, []);
+
+  const handleOpenCorrection = useCallback((personaId: string) => {
+    setCorrectionPersonaId(personaId);
+    setCorrectionInput("");
+    setCorrectionModalVisible(true);
+  }, []);
+
+  const handleSubmitCorrection = useCallback(async () => {
+    if (!correctionPersonaId || !correctionInput.trim() || submittingCorrection) return;
+    setSubmittingCorrection(true);
+    try {
+      const parsed = await parseCorrection("她", correctionInput);
+      await addCorrection(correctionPersonaId, {
+        scene: parsed.scene || "对话中",
+        wrongBehavior: parsed.wrongBehavior || "当前行为",
+        correctBehavior: parsed.correctBehavior || correctionInput,
+        timestamp: new Date().toISOString(),
+      });
+      Alert.alert("成功", "纠正记录已保存");
+      setCorrectionModalVisible(false);
+      setCorrectionInput("");
+    } catch (err) {
+      Alert.alert("失败", "纠正处理失败，请稍后重试");
+    } finally {
+      setSubmittingCorrection(false);
+    }
+  }, [correctionPersonaId, correctionInput, submittingCorrection]);
+
   const load = useCallback(async () => {
     const personas = await getAllPersonas();
     const list: PersonaProfile[] = [];
     for (const p of personas) {
-      const avatar = await SecureStore.getItemAsync(`persona_avatar_${p.id}`);
-      const sig = await SecureStore.getItemAsync(`persona_signature_${p.id}`);
+      const avatar = await webStorage.getItemAsync(`persona_avatar_${p.id}`);
+      const sig = await webStorage.getItemAsync(`persona_signature_${p.id}`);
       list.push({ persona: p, avatarUri: avatar, signature: sig || "" });
     }
     setProfiles(list);
@@ -47,7 +109,7 @@ export default function PersonaManageScreen() {
     const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: "images", allowsEditing: true, aspect: [1, 1], quality: 0.8 });
     if (!r.canceled && r.assets[0]) {
       const uri = r.assets[0].uri;
-      await SecureStore.setItemAsync(`persona_avatar_${personaId}`, uri);
+      await webStorage.setItemAsync(`persona_avatar_${personaId}`, uri);
       setProfiles((prev) => prev.map((p) => (p.persona.id === personaId ? { ...p, avatarUri: uri } : p)));
     }
   }, []);
@@ -62,8 +124,8 @@ export default function PersonaManageScreen() {
       { text: "取消", style: "cancel" },
       { text: "删除", style: "destructive", onPress: async () => {
         await deletePersona(id);
-        await SecureStore.deleteItemAsync(`persona_avatar_${id}`);
-        await SecureStore.deleteItemAsync(`persona_signature_${id}`);
+        await webStorage.deleteItemAsync(`persona_avatar_${id}`);
+        await webStorage.deleteItemAsync(`persona_signature_${id}`);
         load();
       }},
     ]);
@@ -139,10 +201,17 @@ export default function PersonaManageScreen() {
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.actionCardItem}
-                  onPress={() => router.push("/import")}
+                  onPress={() => handleOpenCorrection(profile.persona.id)}
                 >
-                  <Text style={styles.actionCardIcon}>📂</Text>
-                  <Text style={styles.actionCardText}>导入</Text>
+                  <Text style={styles.actionCardIcon}>✏️</Text>
+                  <Text style={styles.actionCardText}>纠正</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionCardItem}
+                  onPress={() => handleOpenAppend(profile.persona.id)}
+                >
+                  <Text style={styles.actionCardIcon}>📎</Text>
+                  <Text style={styles.actionCardText}>追加</Text>
                 </TouchableOpacity>
               </View>
 
@@ -160,6 +229,68 @@ export default function PersonaManageScreen() {
           <Text style={styles.addText}>创建新的分身</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* 追加聊天记录确认弹窗 */}
+      <Modal visible={appendModalVisible} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>追加聊天记录</Text>
+            <Text style={styles.modalBody}>将从聊天记录中追加分析 20 条最新消息，更新该分身的风格数据。继续吗？</Text>
+            <View style={styles.modalBtns}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setAppendModalVisible(false)}>
+                <Text style={styles.modalCancelText}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmBtn, appending && { opacity: 0.5 }]}
+                onPress={handleAppendRecords}
+                disabled={appending}
+              >
+                {appending ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={styles.modalConfirmText}>确定追加</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 纠正行为弹窗 */}
+      <Modal visible={correctionModalVisible} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>纠正分身行为</Text>
+            <Text style={styles.modalBody}>描述她应该怎么做（而不是当前的行为）。例如：</Text>
+            <Text style={styles.modalExample}>她生气了应该直接说出来，而不是已读不回</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={correctionInput}
+              onChangeText={setCorrectionInput}
+              placeholder={"在这里输入纠正描述..."}
+              multiline
+              textAlignVertical="top"
+              placeholderTextColor="#CCC"
+            />
+            <View style={styles.modalBtns}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => { setCorrectionModalVisible(false); setCorrectionInput(""); }}>
+                <Text style={styles.modalCancelText}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmBtn, submittingCorrection && { opacity: 0.5 }]}
+                onPress={handleSubmitCorrection}
+                disabled={submittingCorrection}
+              >
+                {submittingCorrection ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={styles.modalConfirmText}>保存纠正</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -231,4 +362,79 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 16, color: "#999", marginBottom: 20 },
   emptyBtn: { backgroundColor: WECHAT_GREEN, paddingHorizontal: 32, paddingVertical: 12, borderRadius: 8 },
   emptyBtnText: { color: "#FFF", fontSize: 15, fontWeight: "600" },
+
+  // 弹窗
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalBox: {
+    backgroundColor: "#FFF",
+    borderRadius: 16,
+    padding: 24,
+    marginHorizontal: 32,
+    width: "85%",
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#191919",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  modalBody: {
+    fontSize: 14,
+    color: "#666",
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  modalExample: {
+    fontSize: 13,
+    color: "#999",
+    fontStyle: "italic",
+    backgroundColor: "#F5F5F5",
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  modalInput: {
+    backgroundColor: "#F5F5F5",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 15,
+    minHeight: 100,
+    textAlignVertical: "top",
+    color: "#191919",
+    marginBottom: 16,
+  },
+  modalBtns: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 12,
+  },
+  modalCancelBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  modalCancelText: {
+    fontSize: 15,
+    color: "#888",
+  },
+  modalConfirmBtn: {
+    backgroundColor: "#07C160",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    minWidth: 80,
+    alignItems: "center",
+  },
+  modalConfirmText: {
+    fontSize: 15,
+    color: "#FFF",
+    fontWeight: "600",
+  },
 });

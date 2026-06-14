@@ -45,7 +45,7 @@ export default function SettingsScreen() {
   const [messageCount, setMessageCount] = useState(0);
   const [rateLimitRemaining, setRateLimitRemaining] = useState(50);
 
-  // ÓÃ»§×ÊÁÏ
+  // ç”¨æˆ·èµ„æ–™
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [nickname, setNickname] = useState("");
   const [signature, setSignature] = useState("");
@@ -54,10 +54,10 @@ export default function SettingsScreen() {
   const [nicknameDraft, setNicknameDraft] = useState("");
   const [signatureDraft, setSignatureDraft] = useState("");
 
-  // ËùÓĞ·ÖÉí×ÊÁÏ£¨Ö§³Ö¶à¸ö£©
+  // æ‰€æœ‰åˆ†èº«èµ„æ–™ï¼ˆæ”¯æŒå¤šä¸ªï¼‰
   const [personaProfiles, setPersonaProfiles] = useState<PersonaProfile[]>([]);
 
-  // ±íÇé°üµ¯´°
+  // è¡¨æƒ…åŒ…å¼¹çª—
   const [stickerModalVisible, setStickerModalVisible] = useState(false);
 
   useEffect(() => {
@@ -66,10 +66,10 @@ export default function SettingsScreen() {
       setHasKey(!!key);
       const count = await getCount();
       setMessageCount(count);
-      // rateLimiter ÊÇÄÚ´æ»¬¶¯´°¿Ú£¬App ÖØÆôºóÖØÖÃ
+      // rateLimiter æ˜¯å†…å­˜æ»‘åŠ¨çª—å£ï¼ŒApp é‡å¯åé‡ç½®
       setRateLimitRemaining(getRateLimiter().remaining);
 
-      // ¼ÓÔØÓÃ»§×ÊÁÏ
+      // åŠ è½½ç”¨æˆ·èµ„æ–™
       const savedAvatar = await webStorage.getItemAsync(USER_AVATAR_KEY);
       if (savedAvatar) setAvatarUri(savedAvatar);
       const savedNickname = await webStorage.getItemAsync(USER_NICKNAME_KEY);
@@ -77,7 +77,7 @@ export default function SettingsScreen() {
       const savedSignature = await webStorage.getItemAsync(USER_SIGNATURE_KEY);
       if (savedSignature) setSignature(savedSignature);
 
-      // ¼ÓÔØËùÓĞ·ÖÉí
+      // åŠ è½½æ‰€æœ‰åˆ†èº«
       const personas = await getAllPersonas();
       const profiles: PersonaProfile[] = [];
       for (const p of personas) {
@@ -93,12 +93,12 @@ export default function SettingsScreen() {
     })();
   }, []);
 
-  // --- ÓÃ»§×ÊÁÏ²Ù×÷ ---
+  // --- ç”¨æˆ·èµ„æ–™æ“ä½œ ---
 
   const handlePickAvatar = useCallback(async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert("È¨ÏŞ²»×ã", "ĞèÒªÏà²áÈ¨ÏŞ²ÅÄÜÑ¡ÔñÍ·Ïñ");
+      Alert.alert("æƒé™ä¸è¶³", "éœ€è¦ç›¸å†Œæƒé™æ‰èƒ½é€‰æ‹©å¤´åƒ");
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -134,13 +134,13 @@ export default function SettingsScreen() {
     setShowSignatureInput(false);
   }, [signatureDraft]);
 
-  // --- ·ÖÉí²Ù×÷ ---
+  // --- åˆ†èº«æ“ä½œ ---
 
   const handlePickPersonaAvatar = useCallback(
     async (personaId: string) => {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert("È¨ÏŞ²»×ã", "ĞèÒªÏà²áÈ¨ÏŞ²ÅÄÜÑ¡ÔñÍ·Ïñ");
+        Alert.alert("æƒé™ä¸è¶³", "éœ€è¦ç›¸å†Œæƒé™æ‰èƒ½é€‰æ‹©å¤´åƒ");
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -185,12 +185,12 @@ export default function SettingsScreen() {
     await setApiKey(trimmed);
     setHasKey(true);
     setApiKeyInput("");
-    Alert.alert("ÒÑ±£´æ", "API Key ÒÑ°²È«´æ´¢");
+    Alert.alert("å·²ä¿å­˜", "API Key å·²å®‰å…¨å­˜å‚¨");
   };
 
   const handleDeleteKey = async () => {
     if (typeof window !== 'undefined' && window.confirm) {
-      if (!window.confirm('È·¶¨É¾³ı API Key£¿É¾³ıºó AI »Ø¸´¹¦ÄÜ½«²»¿ÉÓÃ¡£')) return;
+      if (!window.confirm('ç¡®å®šåˆ é™¤ API Keyï¼Ÿåˆ é™¤å AI å›å¤åŠŸèƒ½å°†ä¸å¯ç”¨ã€‚')) return;
     }
     await deleteApiKey();
     setHasKey(false);
@@ -202,21 +202,21 @@ export default function SettingsScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
-        {/* --- ÎÒµÄ×ÊÁÏ --- */}
-        <Text style={styles.sectionHeader}>ÎÒµÄ</Text>
+        {/* --- æˆ‘çš„èµ„æ–™ --- */}
+        <Text style={styles.sectionHeader}>æˆ‘çš„</Text>
         <View style={styles.sectionCard}>
           <TouchableOpacity
             style={styles.profileRow}
             onPress={handlePickAvatar}
             activeOpacity={0.6}
           >
-            <Text style={styles.rowLabel}>Í·Ïñ</Text>
+            <Text style={styles.rowLabel}>å¤´åƒ</Text>
             <View style={styles.rowRight}>
               <View style={styles.userAvatar}>
                 {avatarUri ? (
                   <Image source={{ uri: avatarUri }} style={styles.avatarImg} />
                 ) : (
-                  <Text style={styles.placeholder}>??</Text>
+                  <Text style={styles.placeholder}>ğŸ‘¤</Text>
                 )}
               </View>
               <Text style={styles.arrow}>{'>'}</Text>
@@ -231,7 +231,7 @@ export default function SettingsScreen() {
             }}
             activeOpacity={0.6}
           >
-            <Text style={styles.rowLabel}>êÇ³Æ</Text>
+            <Text style={styles.rowLabel}>æ˜µç§°</Text>
             <View style={styles.rowRight}>
               {showNicknameInput ? (
                 <TextInput
@@ -244,7 +244,7 @@ export default function SettingsScreen() {
                 />
               ) : (
                 <>
-                  <Text style={styles.rowValue}>{nickname || "Î´ÉèÖÃ"}</Text>
+                  <Text style={styles.rowValue}>{nickname || "æœªè®¾ç½®"}</Text>
                   <Text style={styles.arrow}>{'>'}</Text>
                 </>
               )}
@@ -259,7 +259,7 @@ export default function SettingsScreen() {
             }}
             activeOpacity={0.6}
           >
-            <Text style={styles.rowLabel}>Ç©Ãû</Text>
+            <Text style={styles.rowLabel}>ç­¾å</Text>
             <View style={styles.rowRight}>
               {showSignatureInput ? (
                 <TextInput
@@ -269,13 +269,13 @@ export default function SettingsScreen() {
                   autoFocus
                   onBlur={handleSaveSignature}
                   onSubmitEditing={handleSaveSignature}
-                  placeholder="Ğ´ÏÂÄãµÄ¸öĞÔÇ©Ãû"
+                  placeholder="å†™ä¸‹ä½ çš„ä¸ªæ€§ç­¾å"
                   placeholderTextColor="#CCC"
                 />
               ) : (
                 <>
                   <Text style={styles.rowValue} numberOfLines={1}>
-                    {signature || "Î´ÉèÖÃ"}
+                    {signature || "æœªè®¾ç½®"}
                   </Text>
                   <Text style={styles.arrow}>{'>'}</Text>
                 </>
@@ -284,41 +284,41 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* --- ËıµÄ·ÖÉí --- */}
-        <Text style={styles.sectionHeader}>ËıµÄ·ÖÉí</Text>
+        {/* --- å¥¹çš„åˆ†èº« --- */}
+        <Text style={styles.sectionHeader}>å¥¹çš„åˆ†èº«</Text>
         <View style={styles.sectionCard}>
           <TouchableOpacity
             style={styles.menuRow}
             onPress={() => router.push("/persona/manage")}
             activeOpacity={0.6}
           >
-            <Text style={styles.rowLabel}>¹ÜÀí·ÖÉí</Text>
+            <Text style={styles.rowLabel}>ç®¡ç†åˆ†èº«</Text>
             <View style={styles.rowRight}>
               <Text style={styles.rowValue}>
                 {personaProfiles.length > 0
-                  ? `${personaProfiles.length} ¸ö·ÖÉí`
-                  : "Î´´´½¨"}
+                  ? `${personaProfiles.length} ä¸ªåˆ†èº«`
+                  : "æœªåˆ›å»º"}
               </Text>
               <Text style={styles.arrow}>{'>'}</Text>
             </View>
           </TouchableOpacity>
         </View>
 
-        {/* --- AI ÅäÖÃ --- */}
-        <Text style={styles.sectionHeader}>AI ÅäÖÃ</Text>
+        {/* --- AI é…ç½® --- */}
+        <Text style={styles.sectionHeader}>AI é…ç½®</Text>
         <View style={styles.sectionCard}>
           <View style={styles.apiKeyRow}>
             <View style={styles.apiKeyInfo}>
               <Text style={styles.rowLabel}>DeepSeek API Key</Text>
               {hasKey ? (
-                <Text style={styles.keyStatus}>ÒÑÅäÖÃ</Text>
+                <Text style={styles.keyStatus}>å·²é…ç½®</Text>
               ) : (
-                <Text style={styles.keyStatusMissing}>Î´ÅäÖÃ</Text>
+                <Text style={styles.keyStatusMissing}>æœªé…ç½®</Text>
               )}
             </View>
             {hasKey ? (
               <TouchableOpacity onPress={handleDeleteKey}>
-                <Text style={styles.deleteKeyText}>É¾³ı</Text>
+                <Text style={styles.deleteKeyText}>åˆ é™¤</Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -340,59 +340,59 @@ export default function SettingsScreen() {
                 onPress={handleSaveKey}
                 disabled={!apiKeyInput.trim()}
               >
-                <Text style={styles.saveKeyButtonText}>±£´æ</Text>
+                <Text style={styles.saveKeyButtonText}>ä¿å­˜</Text>
               </TouchableOpacity>
             </View>
           )}
         </View>
 
-        {/* --- ±íÇé°ü --- */}
-        <Text style={styles.sectionHeader}>±íÇé°ü</Text>
+        {/* --- è¡¨æƒ…åŒ… --- */}
+        <Text style={styles.sectionHeader}>è¡¨æƒ…åŒ…</Text>
         <View style={styles.sectionCard}>
           <TouchableOpacity
             style={styles.menuRow}
             onPress={() => setStickerModalVisible(true)}
             activeOpacity={0.6}
           >
-            <Text style={styles.rowLabel}>¹ÜÀí±íÇé°ü</Text>
+            <Text style={styles.rowLabel}>ç®¡ç†è¡¨æƒ…åŒ…</Text>
             <View style={styles.rowRight}>
-              <Text style={styles.rowValue}>²é¿´/µ¼Èë</Text>
+              <Text style={styles.rowValue}>æŸ¥çœ‹/å¯¼å…¥</Text>
               <Text style={styles.arrow}>{'>'}</Text>
             </View>
           </TouchableOpacity>
         </View>
 
-        {/* --- Êı¾İ --- */}
-        <Text style={styles.sectionHeader}>Êı¾İ</Text>
+        {/* --- æ•°æ® --- */}
+        <Text style={styles.sectionHeader}>æ•°æ®</Text>
         <View style={styles.sectionCard}>
           <View style={styles.menuRow}>
-            <Text style={styles.rowLabel}>ÒÑµ¼ÈëÏûÏ¢</Text>
-            <Text style={styles.rowValue}>{messageCount} Ìõ</Text>
+            <Text style={styles.rowLabel}>å·²å¯¼å…¥æ¶ˆæ¯</Text>
+            <Text style={styles.rowValue}>{messageCount} æ¡</Text>
           </View>
           <RowSeparator />
           <View style={styles.menuRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.rowLabel}>API µ÷ÓÃÆµÂÊ</Text>
+              <Text style={styles.rowLabel}>API è°ƒç”¨é¢‘ç‡</Text>
               <Text style={styles.dataSourceHint}>
-                À´Ô´£ºÄÚ´æ»¬¶¯´°¿Ú¼ÆÊıÆ÷£¨App ÖØÆôºóÖØÖÃ£©
+                æ¥æºï¼šå†…å­˜æ»‘åŠ¨çª—å£è®¡æ•°å™¨ï¼ˆApp é‡å¯åé‡ç½®ï¼‰
               </Text>
             </View>
             <Text style={styles.rowValue}>
-              {rateLimitRemaining} / 50 ´Î/Ğ¡Ê±
+              {rateLimitRemaining} / 50 æ¬¡/å°æ—¶
             </Text>
           </View>
         </View>
 
-        {/* --- ¹ØÓÚ --- */}
-        <Text style={styles.sectionHeader}>¹ØÓÚ</Text>
+        {/* --- å…³äº --- */}
+        <Text style={styles.sectionHeader}>å…³äº</Text>
         <View style={styles.sectionCard}>
           <Text style={styles.disclaimer}>{DISCLAIMER_TEXT}</Text>
         </View>
 
-        <Text style={styles.version}>AI ÁÄÌì·ÖÉí v0.1.0 ¡¤ ÄÚ²¿²âÊÔ°æ</Text>
+        <Text style={styles.version}>AI èŠå¤©åˆ†èº« v0.1.0 Â· å†…éƒ¨æµ‹è¯•ç‰ˆ</Text>
       </ScrollView>
 
-      {/* ±íÇé°ü¹ÜÀíµ¯´° */}
+      {/* è¡¨æƒ…åŒ…ç®¡ç†å¼¹çª— */}
       <StickerPickerModal
         visible={stickerModalVisible}
         onClose={() => setStickerModalVisible(false)}
@@ -425,7 +425,7 @@ const styles = StyleSheet.create({
   },
   cardGap: { height: 12 },
 
-  // ĞĞ
+  // è¡Œ
   profileRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -458,7 +458,7 @@ const styles = StyleSheet.create({
     marginLeft: 20,
   },
 
-  // ·ÖÉíÃû³ÆĞĞ
+  // åˆ†èº«åç§°è¡Œ
   personaNameRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -474,7 +474,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#E5E5E5",
   },
 
-  // ÓÃ»§Í·Ïñ£¨·½ĞÎÔ²½Ç£©
+  // ç”¨æˆ·å¤´åƒï¼ˆæ–¹å½¢åœ†è§’ï¼‰
   userAvatar: {
     width: 56,
     height: 56,
@@ -487,7 +487,7 @@ const styles = StyleSheet.create({
   avatarImg: { width: 56, height: 56, borderRadius: 4 },
   placeholder: { fontSize: 28 },
 
-  // ËıÍ·Ïñ£¨Ô²ĞÎ£¬Æ¥ÅäDemo£©
+  // å¥¹å¤´åƒï¼ˆåœ†å½¢ï¼ŒåŒ¹é…Demoï¼‰
   herAvatar: {
     width: 40,
     height: 40,
@@ -546,7 +546,7 @@ const styles = StyleSheet.create({
   saveKeyButtonDisabled: { opacity: 0.4 },
   saveKeyButtonText: { color: "#FFF", fontSize: 14, fontWeight: "600" },
 
-  // Êı¾İÀ´Ô´±ê×¢
+  // æ•°æ®æ¥æºæ ‡æ³¨
   dataSourceHint: {
     fontSize: 11,
     color: "#BBB",

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+﻿import { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -11,6 +11,11 @@ import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getPersonaById } from "../../modules/persona/personaService";
 import type { Persona, PersonaLayers, PersonaCorrection } from "../../modules/persona/types";
+import type { Memories } from "../../modules/persona/memoriesTypes";
+import { getMemories, saveMemories } from "../../modules/persona/personaService";
+import { analyzeMemories } from "../../modules/persona/memoriesAnalyzer";
+import { getSampleBySender } from "../../modules/database/repositories/chatRecordRepo";
+import { formatMemories, summarizeMemories } from "../../modules/persona/memoriesBuilder";
 
 const HER_PINK = "#FF9EAF";
 const BG_GRAY = "#F3F3F3";
@@ -24,6 +29,57 @@ export default function PersonaDetailScreen() {
   const [persona, setPersona] = useState<Persona | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>("layers");
+  const [memories, setMemories] = useState<Memories | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+
+  const handleAnalyzeMemories = useCallback(async () => {
+    if (!persona || analyzing) return;
+    setAnalyzing(true);
+    try {
+      // 尝试从聊天记录获取样本
+      let texts: string[] = [];
+      try {
+        const samples = await getSampleBySender(persona.sourceSender, 200);
+        texts = samples.map((s) => s.content);
+      } catch {
+        // getSampleBySender 可能失败
+      }
+
+      // 如果是手动创建的 persona 或没有聊天记录，使用风格描述作为替代
+      if (texts.length === 0) {
+        const description = persona.styleSummary || persona.name + "的性格描述";
+        if (persona.sourceSender === "manual_input" || samples.length === 0) {
+          texts = [description];
+        }
+      }
+
+      if (texts.length === 0) {
+        Alert.alert(
+          "无法分析",
+          "没有找到聊天记录。
+
+请先在分身管理页 → 📎追加聊天记录，
+或在设置页导入聊天记录后重试。"
+        );
+        setAnalyzing(false);
+        return;
+      }
+
+      const extraInfo = persona.styleSummary ? "分身风格摘要：" + persona.styleSummary : "";
+      const result = await analyzeMemories(texts, extraInfo);
+      await saveMemories(persona.id, result);
+      setMemories(result);
+      Alert.alert("完成", "共同记忆分析完成！
+
+AI 已从聊天记录中提取了重要时刻、日常习惯、偏好等共同记忆。
+这些记忆会在对话中自然融入。");
+    } catch (err) {
+      console.warn("[detail] analyzeMemories failed:", err);
+      Alert.alert("分析失败", "请稍后重试，或检查 API Key 是否配置正确。");
+    } finally {
+      setAnalyzing(false);
+    }
+  }, [persona, analyzing]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -31,6 +87,9 @@ export default function PersonaDetailScreen() {
     try {
       const p = await getPersonaById(id);
       setPersona(p);
+      // 加载关联的记忆数据
+      const mems = await getMemories(id);
+      setMemories(mems);
     } catch (e) {
       console.warn(e);
     } finally {
@@ -101,7 +160,7 @@ export default function PersonaDetailScreen() {
       {/* 内容 */}
       <ScrollView style={styles.body} contentContainerStyle={styles.scrollContent}>
         {activeTab === "layers" && <LayersView layers={layers} name={persona.name} />}
-        {activeTab === "memories" && <MemoriesView memories={persona.layers?.layer5 ? persona.layers.layer5 : []} />}
+        {activeTab === "memories" && <MemoriesView memories={memories} persona={persona} analyzing={analyzing} onAnalyze={handleAnalyzeMemories} />}
         {activeTab === "corrections" && <CorrectionsView corrections={persona.corrections || []} />}
       </ScrollView>
     </SafeAreaView>
@@ -241,20 +300,58 @@ function LayersView({ layers, name }: { layers: PersonaLayers; name: string }) {
 }
 
 // ========== 记忆视图 ==========
-function MemoriesView({ memories }: { memories: string[] }) {
-  return (
-    <View style={styles.memoriesCard}>
-      <Text style={styles.memoriesTitle}>共同记忆</Text>
-      {memories.length > 0 ? (
-        memories.map((m, i) => <Text key={i} style={styles.memoriesItem}>• {m}</Text>)
-      ) : (
-        <Text style={styles.emptyHint}>
-          暂无记忆数据。导入聊天记录并重新分析后，这里会显示你们的共同记忆。
-        </Text>
-      )}
-    </View>
-  );
-}
+function MemoriesView({ memories, persona, analyzing, onAnalyze }: {
+  memories: Memories | null;
+  persona: Persona | null;
+  analyzing: boolean;
+  onAnalyze: () => void;
+}) {
+    if (!memories) {
+      return (
+        <View style={styles.memoriesCard}>
+          <Text style={styles.memoriesTitle}>共同记忆</Text>
+          <Text style={styles.emptyHint}>暂无记忆数据</Text>
+          <Text style={styles.memoriesHint}>AI 将分析聊天记录，提取你们的：</Text>
+          <View style={styles.memoriesHintList}>
+            <Text style={styles.memoriesHintItem}>重要时刻与纪念日</Text>
+            <Text style={styles.memoriesHintItem}>日常小习惯与仪式</Text>
+            <Text style={styles.memoriesHintItem}>她的喜好与偏好</Text>
+            <Text style={styles.memoriesHintItem}>情感与冲突模式</Text>
+            <Text style={styles.memoriesHintItem}>标志性话语</Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.analyzeBtn, analyzing && styles.analyzeBtnDisabled]}
+            onPress={onAnalyze}
+            disabled={analyzing}
+          >
+            {analyzing ? (
+              <ActivityIndicator size="small" color="#FFF" />
+            ) : (
+              <Text style={styles.analyzeBtnText}>AI 分析共同记忆</Text>
+            )}
+          </TouchableOpacity>
+          <Text style={styles.analyzeBtnHint}>
+            {persona?.sourceSender === "manual_input"
+              ? "手动创建的分身需要先追加聊天记录才能分析记忆"
+              : "需要至少有聊天记录数据才能分析"}
+          </Text>
+        </View>
+      );
+    }
+
+    const summary = summarizeMemories(memories);
+    const formatted = formatMemories(memories);
+
+    return (
+      <View style={styles.memoriesCard}>
+        <Text style={styles.memoriesTitle}>共同记忆</Text>
+        <Text style={styles.memoriesSummary}>{summary}</Text>
+        <Text style={styles.memoriesMetaText}>版本 {memories.meta.version} · 分析 {memories.meta.sourceCount} 条记录</Text>
+        <View style={styles.memoriesDivider} />
+        <Text style={styles.memoriesContent}>{formatted}</Text>
+      </View>
+    );
+  }
 
 // ========== 纠正记录 ==========
 function CorrectionsView({ corrections }: { corrections: PersonaCorrection[] }) {
@@ -369,6 +466,10 @@ const styles = StyleSheet.create({
 
   // 记忆卡片
   memoriesCard: { backgroundColor: "#FFF", borderRadius: 12, padding: 16 },
+  memoriesSummary: { fontSize: 14, color: "#07C160", fontWeight: "500", marginBottom: 4 },
+  memoriesMetaText: { fontSize: 11, color: "#BBB", marginBottom: 8 },
+  memoriesDivider: { height: 1, backgroundColor: "#F0F0F0", marginBottom: 12 },
+  memoriesContent: { fontSize: 14, color: "#333", lineHeight: 22 },
   memoriesTitle: { fontSize: 16, fontWeight: "600", color: "#191919", marginBottom: 12 },
   memoriesItem: { fontSize: 14, color: "#333", lineHeight: 22, marginBottom: 4 },
 
@@ -387,4 +488,37 @@ const styles = StyleSheet.create({
 
   // 空状态
   emptyHint: { fontSize: 14, color: "#B0B0B0", fontStyle: "italic", lineHeight: 20 },
+  analyzeBtn: {
+    marginTop: 16,
+    backgroundColor: "#07C160",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  analyzeBtnDisabled: { opacity: 0.5 },
+  analyzeBtnText: { color: "#FFF", fontSize: 15, fontWeight: "600" },
+  analyzeBtnHint: {
+    marginTop: 8,
+    fontSize: 12,
+    color: "#BBB",
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  memoriesHint: {
+    fontSize: 14,
+    color: "#888",
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+  memoriesHintList: {
+    marginBottom: 12,
+    paddingLeft: 8,
+  },
+  memoriesHintItem: {
+    fontSize: 14,
+    color: "#666",
+    lineHeight: 24,
+    paddingLeft: 16,
+  },
 });

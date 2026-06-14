@@ -105,7 +105,7 @@ export default function ChatScreen() {
 
   // ========== 对话纠正 ==========
   const handleCorrection = useCallback(async (msg: UIMessage) => {
-    if (typeof window !== "undefined" && window.confirm) {
+    if (typeof window !== "undefined" && typeof window.alert === "function") {
       if (!window.confirm("纠正TA - 她应该怎么回应？")) return;
       setCorrectingMsg(msg);
     } else {
@@ -130,7 +130,7 @@ export default function ChatScreen() {
           timestamp: new Date().toISOString(),
         });
       }
-      if (typeof window !== "undefined" && window.confirm) { window.alert("✅ 已记录\n" + (parsed.correctionRecord || correctionInput)); } else { Alert.alert("✅ 已记录", parsed.correctionRecord || correctionInput); }
+      if (typeof window !== "undefined" && typeof window.alert === "function") { window.alert("✅ 已记录\n" + (parsed.correctionRecord || correctionInput)); } else { Alert.alert("✅ 已记录", parsed.correctionRecord || correctionInput); }
     } catch {
       if (persona?.id) {
         await addCorrection(persona.id, {
@@ -140,7 +140,7 @@ export default function ChatScreen() {
           timestamp: new Date().toISOString(),
         });
       }
-      if (typeof window !== "undefined" && window.confirm) { window.alert("✅ 已记录\n已记录纠正：" + correctionInput); } else { Alert.alert("✅ 已记录", "已记录纠正：" + correctionInput); }
+      if (typeof window !== "undefined" && typeof window.alert === "function") { window.alert("✅ 已记录\n已记录纠正：" + correctionInput); } else { Alert.alert("✅ 已记录", "已记录纠正：" + correctionInput); }
     }
     setCorrectingMsg(null);
     setCorrectionInput("");

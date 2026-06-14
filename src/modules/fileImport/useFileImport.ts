@@ -5,12 +5,21 @@ import { stripBOM, isLikelyGBK } from "./encodingDetector";
 
 export interface FileImportResult {
   fileName: string;
-  fileType: "txt" | "json";
+  fileType: "txt" | "json" | "html" | "csv";
   content: string;
   sizeBytes: number;
 }
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
+
+const SUPPORTED_MIME_TYPES = [
+  "text/plain",
+  "application/json",
+  "text/html",
+  "text/csv",
+  "application/csv",
+  "application/octet-stream",
+];
 
 async function readFileNative(uri: string): Promise<string> {
   const FileSystem = await import("expo-file-system/legacy");
@@ -24,6 +33,20 @@ async function readFileWeb(uri: string): Promise<string> {
   return response.text();
 }
 
+/**
+ * 根据文件扩展名自动检测文件类型
+ */
+function detectFileType(fileName: string): "txt" | "json" | "html" | "csv" | null {
+  const name = fileName.toLowerCase();
+  if (name.endsWith(".json")) return "json";
+  if (name.endsWith(".csv")) return "csv";
+  if (name.endsWith(".html") || name.endsWith(".htm")) return "html";
+  if (name.endsWith(".txt")) return "txt";
+  return null;
+}
+
+const SUPPORTED_TYPES_DISPLAY = "CSV、TXT、JSON、HTML";
+
 export function useFileImport() {
   const [isImporting, setIsImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,11 +55,7 @@ export function useFileImport() {
     setError(null);
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          "text/plain",
-          "application/json",
-          "application/octet-stream",
-        ],
+        type: SUPPORTED_MIME_TYPES,
         copyToCacheDirectory: true,
       });
 
@@ -49,13 +68,10 @@ export function useFileImport() {
       }
 
       const fileName = file.name.toLowerCase();
-      let fileType: "txt" | "json";
-      if (fileName.endsWith(".json")) {
-        fileType = "json";
-      } else if (fileName.endsWith(".txt")) {
-        fileType = "txt";
-      } else {
-        setError("不支持的文件格式，仅支持 TXT 和 JSON");
+      const fileType = detectFileType(fileName);
+
+      if (!fileType) {
+        setError("不支持的文件格式，仅支持 " + SUPPORTED_TYPES_DISPLAY);
         return null;
       }
 
@@ -82,5 +98,5 @@ export function useFileImport() {
     }
   }, []);
 
-  return { pickAndRead, isImporting, error };
+  return { pickAndRead, isImporting, error, SUPPORTED_TYPES_DISPLAY };
 }

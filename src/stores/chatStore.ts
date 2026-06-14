@@ -2,8 +2,9 @@ import { create } from "zustand";
 import { nanoid } from "nanoid";
 import { getStore } from "../modules/database/storeProvider";
 import { getConversationPairs } from "../modules/database/repositories/chatRecordRepo";
-import { getPersonaById } from "../modules/persona/personaService";
+import { getPersonaById, getMemories } from "../modules/persona/personaService";
 import type { Persona } from "../modules/persona/types";
+import type { Memories } from "../modules/persona/memoriesTypes";
 import { buildMessages } from "../modules/aiEngine/promptBuilder";
 import { trimHistory } from "../modules/aiEngine/contextManager";
 import { maskPII } from "../modules/aiEngine/piiMasker";
@@ -86,7 +87,15 @@ async function callChatAPI(
     .slice(0, -2)
     .map((m) => ({ role: m.role as "user" | "persona", text: m.text }));
   const trimmedHistory = trimHistory(history);
-  const apiMessages = buildMessages(persona, maskedSamples, trimmedHistory, sanitizedUserInput);
+  // 加载共同记忆
+  let memories: Memories | null = null;
+  try {
+    memories = await getMemories(persona.id);
+  } catch (err) {
+    console.warn("[chatAPI] load memories failed:", err);
+  }
+
+  const apiMessages = buildMessages(persona, maskedSamples, trimmedHistory, sanitizedUserInput, memories);
 
   // 调用 API（带超时）
   const reply = await Promise.race([

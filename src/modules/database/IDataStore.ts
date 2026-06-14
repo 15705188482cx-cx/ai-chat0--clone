@@ -7,6 +7,7 @@
 // =============================================================================
 
 import type { Persona } from "../persona/types";
+import type { Memories } from "../persona/memoriesTypes";
 
 // ========== 通用行类型 ==========
 export interface ChatRecordRow {
@@ -218,4 +219,13 @@ export interface IDataStore {
 
   /** 删除指定表情包 */
   deleteStickerById(id: string): Promise<void>;
+
+  // ─── Memories ───
+
+  /** 获取 Persona 关联的共同记忆。不存在返回空 Memories */
+  getMemories(personaId: string): Promise<Memories>;
+
+  /** 保存共同记忆 */
+  saveMemories(personaId: string, memories: Memories): Promise<void>;
+
 }

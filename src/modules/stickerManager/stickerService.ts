@@ -1,4 +1,4 @@
-// =============================================================================
+﻿// =============================================================================
 // stickerService — 表情包服务
 // 规则 1(契约优先): 通过 getStore() 统一访问存储层
 // =============================================================================
@@ -49,7 +49,7 @@ export const StickerService = {
     return {
       id: row.id,
       filePath: row.file_path,
-      label: row.label,
+      label: row.label ?? "",
       embedding: [],
     };
   },
@@ -61,7 +61,7 @@ export const StickerService = {
     return rows.map((r) => ({
       id: r.id,
       filePath: r.file_path,
-      label: r.label,
+      label: r.label ?? "",
       embedding: r.embedding ? JSON.parse(r.embedding) : [],
     }));
   },

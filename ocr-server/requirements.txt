@@ -1,0 +1,5 @@
+﻿paddlepaddle>=2.6.0
+paddleocr>=2.8.0
+flask>=3.0.0
+flask-cors>=4.0.0
+pillow>=10.0.0

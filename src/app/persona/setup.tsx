@@ -17,6 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import {
   getAvailableSenders,
   createPersona,
+  createPersonaFromText,
 } from "../../modules/persona/personaService";
 import { getSampleBySender } from "../../modules/database/repositories/chatRecordRepo";
 import { analyzeStyleFull } from "../../modules/aiEngine/styleAnalyzer";
@@ -32,6 +33,8 @@ export default function PersonaSetupScreen() {
   const { preSelectedSender } = useLocalSearchParams<{ preSelectedSender?: string }>();
   const { setPersonaAndInitConversation } = useChatStore();
 
+  const [createMode, setCreateMode] = useState<"fromChat" | "manual">("fromChat");
+  const [manualDescription, setManualDescription] = useState("");
   const [senders, setSenders] = useState<string[]>([]);
   const [selectedSender, setSelectedSender] = useState<string | null>(null);
   const [personaName, setPersonaName] = useState("");
@@ -606,6 +609,61 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 17,
     fontWeight: "600",
+  },
+
+  // 模式切换
+  modeToggle: {
+    flexDirection: "row",
+    marginHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 16,
+    backgroundColor: "#F0F0F0",
+    borderRadius: 8,
+    padding: 2,
+  },
+  modeTab: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
+    borderRadius: 6,
+  },
+  modeTabActive: {
+    backgroundColor: "#FFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  modeTabText: {
+    fontSize: 14,
+    color: "#999",
+    fontWeight: "500",
+  },
+  modeTabTextActive: {
+    color: "#191919",
+    fontWeight: "600",
+  },
+
+  // 手动输入
+  manualSection: {
+    marginTop: 0,
+  },
+  manualCard: {
+    backgroundColor: "#FFF",
+    marginHorizontal: 0,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: "#E5E5E5",
+    padding: 0,
+  },
+  manualInput: {
+    minHeight: 160,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    fontSize: 15,
+    lineHeight: 22,
+    color: "#191919",
   },
 });
 

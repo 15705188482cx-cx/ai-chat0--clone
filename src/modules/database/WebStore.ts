@@ -9,6 +9,8 @@
 import { Platform } from "react-native";
 import { nanoid } from "nanoid";
 import type { Persona } from "../persona/types";
+import type { Memories } from "../persona/memoriesTypes";
+import { createEmptyMemories } from "../persona/memoriesAnalyzer";
 import type {
   IDataStore,
   ChatRecordRow,
@@ -410,4 +412,25 @@ export class WebStore implements IDataStore {
     this.db.stickers = this.db.stickers.filter((s) => s.id !== id);
     this.schedulePersist();
   }
+
+  // ======== Memories ========
+
+  async getMemories(personaId: string): Promise<Memories> {
+    this.assertReady();
+    const key = `memories_${personaId}`;
+    const raw = localStorage.getItem(key);
+    if (!raw) return createEmptyMemories();
+    try {
+      return JSON.parse(raw) as Memories;
+    } catch {
+      return createEmptyMemories();
+    }
+  }
+
+  async saveMemories(personaId: string, memories: Memories): Promise<void> {
+    this.assertReady();
+    const key = `memories_${personaId}`;
+    localStorage.setItem(key, JSON.stringify(memories));
+  }
+
 }

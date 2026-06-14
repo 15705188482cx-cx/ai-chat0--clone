@@ -5,6 +5,9 @@
 // =============================================================================
 
 import type { IDataStore } from "./IDataStore";
+import type { Persona } from "../persona/types";
+import type { Memories } from "../persona/memoriesTypes";
+import { createEmptyMemories } from "../persona/memoriesAnalyzer";
 
 export class NativeStore implements IDataStore {
   async init(): Promise<void> {
@@ -31,4 +34,16 @@ export class NativeStore implements IDataStore {
   async insertSticker(): Promise<any> { throw new Error("Not on Web"); }
   async getAllStickers(): Promise<any[]> { throw new Error("Not on Web"); }
   async deleteStickerById(): Promise<void> { throw new Error("Not on Web"); }
+
+  // ======== Memories (in-memory fallback) ========
+  private _memoriesCache: Record<string, Memories> = {};
+
+  async getMemories(personaId: string): Promise<Memories> {
+    return this._memoriesCache[personaId] || createEmptyMemories();
+  }
+
+  async saveMemories(personaId: string, memories: Memories): Promise<void> {
+    this._memoriesCache[personaId] = memories;
+  }
+
 }
