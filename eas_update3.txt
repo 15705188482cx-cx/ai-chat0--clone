@@ -1,0 +1,55 @@
+﻿node.exe : (node:34676) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland altern
+ative instead.
+At E:\node.js\node-v22.22.1-win-x64\node-v22.22.1-win-x64\pnpm.ps1:16 char:5
++     & "$basedir/node$exe"  "$basedir/node_modules/pnpm/bin/pnpm.mjs"  ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:34676) [D...native instead.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Found eas-cli in your project dependencies.
+It's recommended to use the "cli.version" field in eas.json to enforce the eas-cli version for your project.
+Learn more: https://github.com/expo/eas-cli#enforcing-eas-cli-version-for-your-project
+
+> npx expo install expo-updates
+[expo-cli] › Installing 1 SDK 56.0.0 compatible native module using npm
+[expo-cli] > npm install
+[expo-cli] npm warn deprecated lodash.get@4.4.2: This package is deprecated. Use the optional chaining (?.) operator instead.
+[expo-cli] npm warn deprecated lodash.isequal@4.5.0: This package is deprecated. Use require('node:util').isDeepStrictEqual instead.
+[expo-cli] npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+[expo-cli] npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+[expo-cli] npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+[expo-cli] npm warn deprecated @xmldom/xmldom@0.7.13: this version is no longer supported, please update to at least 0.8.*
+[expo-cli] npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+[expo-cli] npm warn deprecated rimraf@2.4.5: Rimraf versions prior to v4 are no longer supported
+[expo-cli] npm warn deprecated glob@6.0.4: Glob versions prior to v9 are no longer supported
+[expo-cli] npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+[expo-cli] npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+[expo-cli] npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+[expo-cli] added 1480 packages, and changed 50 packages in 29s
+[expo-cli] 
+[expo-cli] 222 packages are looking for funding
+[expo-cli]   run `npm fund` for details
+√ Installed expo-updates
+√ Configured updates.url to "https://u.expo.dev/5bb87ba2-7ff4-4af3-a48a-095b277d823b"
+√ Configured runtimeVersion for Android and iOS with "{"policy":"appVersion"}"
+
+All builds of your app going forward will be eligible to receive updates published with EAS Update.
+
+- Exporting...
+[expo-cli] Using src/app as the root directory for Expo Router.
+[expo-cli] Starting Metro Bundler
+[expo-cli] iOS Bundling failed 7172ms index.ts (1161 modules)
+[expo-cli] 
+[expo-cli] SyntaxError: SyntaxError: G:\2026Work\AIchat\ai-chat-clone\src\app\(tabs)\index.tsx: Unexpected token, expected "," (94:3)
+[expo-cli] 
+[expo-cli] [0m [90m 92 |[39m       })()[33m;[39m
+[expo-cli]  [90m 93 |[39m     }[33m,[39m [onboardingRan[33m,[39m firstLaunch[33m.[39misLoading[33m,[39m firstLaunch[33m.[39mneedsOnboarding[33m,[39m firstLaunch[33m.[39mhasKey[33m,[39m router])[33m,[39m
+[expo-cli] [31m[1m>[22m[39m[90m 94 |[39m   )[33m;[39m
+[expo-cli]  [90m    |[39m    [31m[1m^[22m[39m
+[expo-cli]  [90m 95 |[39m
+[expo-cli]  [90m 96 |[39m   [90m// Web fallback：visibilitychange + 定时轮询[39m
+[expo-cli]  [90m 97 |[39m   useEffect(() [33m=>[39m {[0m
+× Export failed
+G:\2026Work\AIchat\ai-chat-clone\node_modules\.pnpm\expo@56.0.12_@babel+core@7._4c87567fd5cedeabb0c8d797cbdabb35\node_modules\expo\bin\cli export --output-dir dist --source-maps --dump-assetmap --platform ios --platform android exited with non-zero code: 1
+    Error: update command failed.

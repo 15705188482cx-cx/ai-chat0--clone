@@ -21,7 +21,10 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "permissions": [
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA"
       ]
     },
     "web": {
@@ -42,6 +45,12 @@
         "projectId": "5bb87ba2-7ff4-4af3-a48a-095b277d823b"
       }
     },
-    "owner": "chenxin199445"
+    "owner": "chenxin199445",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/5bb87ba2-7ff4-4af3-a48a-095b277d823b"
+    }
   }
 }

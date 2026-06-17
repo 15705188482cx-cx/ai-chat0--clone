@@ -85,7 +85,7 @@ export default function ScreenshotImportScreen() {
     const ok = await checkOcrService();
     setServiceAvailable(ok);
     if (!ok) {
-      setError("PaddleOCR 服务未启动，请在 ocr-server/ 目录下运行: python app.py");
+      setError("截图OCR功能需要在电脑上运行 OCR 服务（详见 README）。当前可用方案:文件导入或加载测试数据");
     }
   }, []);
 
@@ -133,7 +133,7 @@ export default function ScreenshotImportScreen() {
     // 检查服务
     const ok = await checkOcrService();
     if (!ok) {
-      setError("PaddleOCR 服务未启动，请在 ocr-server/ 目录下运行: python app.py");
+      setError("截图OCR功能需要在电脑上运行 OCR 服务（详见 README）。当前可用方案:文件导入或加载测试数据");
       return;
     }
 

@@ -1,0 +1,177 @@
+[
+  {
+    "role": "user",
+    "sender_name": "张三",
+    "content": "早啊，今天天气不错",
+    "time": "2024-03-15 09:12:00",
+    "type": "text"
+  },
+  {
+    "role": "friend",
+    "sender_name": "李四",
+    "content": "哈哈 是呀 阳光明媚的",
+    "time": "2024-03-15 09:12:30",
+    "type": "text"
+  },
+  {
+    "role": "user",
+    "sender_name": "张三",
+    "content": "周末有什么安排没？",
+    "time": "2024-03-15 09:13:15",
+    "type": "text"
+  },
+  {
+    "role": "friend",
+    "sender_name": "李四",
+    "content": "我打算去爬山\n你呢？",
+    "time": "2024-03-15 09:14:02",
+    "type": "text"
+  },
+  {
+    "role": "user",
+    "sender_name": "张三",
+    "content": "我还在纠结\n要么去看电影\n要么宅在家打游戏",
+    "time": "2024-03-15 09:14:45",
+    "type": "text"
+  },
+  {
+    "role": "friend",
+    "sender_name": "李四",
+    "content": "哈哈你这选择困难症又犯了吧\n不如一起去爬山呗",
+    "time": "2024-03-15 09:15:30",
+    "type": "text"
+  },
+  {
+    "role": "user",
+    "sender_name": "张三",
+    "content": "嗯嗯 也行\n几点出发？",
+    "time": "2024-03-15 09:16:10",
+    "type": "text"
+  },
+  {
+    "role": "friend",
+    "sender_name": "李四",
+    "content": "早上八点吧\n我们开车去 大概一个多小时到",
+    "time": "2024-03-15 09:17:00",
+    "type": "text"
+  },
+  {
+    "role": "user",
+    "sender_name": "张三",
+    "content": "好的好的 没问题\n那我今晚早点睡",
+    "time": "2024-03-15 09:17:45",
+    "type": "text"
+  },
+  {
+    "role": "friend",
+    "sender_name": "李四",
+    "content": "哈哈哈 难得见你早睡\n对了 记得带水",
+    "time": "2024-03-15 09:18:30",
+    "type": "text"
+  },
+  {
+    "role": "user",
+    "sender_name": "张三",
+    "content": "收到！\n对了小红去不去？",
+    "time": "2024-03-15 09:19:10",
+    "type": "text"
+  },
+  {
+    "role": "friend",
+    "sender_name": "李四",
+    "content": "我问她了 她说要看情况\n可能下午才能确定",
+    "time": "2024-03-15 09:20:05",
+    "type": "text"
+  },
+  {
+    "role": "user",
+    "sender_name": "张三",
+    "content": "行 那到时候再说",
+    "time": "2024-03-15 09:20:50",
+    "type": "text"
+  },
+  {
+    "role": "friend",
+    "sender_name": "李四",
+    "content": "[图片]",
+    "time": "2024-03-15 09:21:30",
+    "type": "image"
+  },
+  {
+    "role": "user",
+    "sender_name": "张三",
+    "content": "哇这个山看起来好高啊",
+    "time": "2024-03-15 09:22:00",
+    "type": "text"
+  },
+  {
+    "role": "friend",
+    "sender_name": "李四",
+    "content": "还好啦 不太难爬的",
+    "time": "2024-03-15 09:22:45",
+    "type": "text"
+  },
+  {
+    "role": "system",
+    "sender_name": "系统",
+    "content": "你已添加了小红为好友",
+    "time": "2024-03-15 12:00:00",
+    "type": "system"
+  },
+  {
+    "role": "user",
+    "sender_name": "张三",
+    "content": "下午好呀",
+    "time": "2024-03-15 14:30:00",
+    "type": "text"
+  },
+  {
+    "role": "friend",
+    "sender_name": "李四",
+    "content": "嗯嗯 刚睡醒",
+    "time": "2024-03-15 14:30:45",
+    "type": "text"
+  },
+  {
+    "role": "user",
+    "sender_name": "张三",
+    "content": "哈哈哈 果然是周末作息\n晚饭想好吃什么了吗",
+    "time": "2024-03-15 14:31:30",
+    "type": "text"
+  },
+  {
+    "role": "friend",
+    "sender_name": "李四",
+    "content": "还没想好呢\n火锅怎么样？",
+    "time": "2024-03-15 14:32:15",
+    "type": "text"
+  },
+  {
+    "role": "user",
+    "sender_name": "张三",
+    "content": "！！！！太好了\n我正想说火锅！！",
+    "time": "2024-03-15 14:33:00",
+    "type": "text"
+  },
+  {
+    "role": "friend",
+    "sender_name": "李四",
+    "content": "哈哈哈 咱俩真有默契\n那我订个位",
+    "time": "2024-03-15 14:33:40",
+    "type": "text"
+  },
+  {
+    "role": "user",
+    "sender_name": "张三",
+    "content": "好的！订六点半吧\n叫上小红一起",
+    "time": "2024-03-15 14:34:25",
+    "type": "text"
+  },
+  {
+    "role": "friend",
+    "sender_name": "李四",
+    "content": "okok\n我来安排",
+    "time": "2024-03-15 14:35:10",
+    "type": "text"
+  }
+]

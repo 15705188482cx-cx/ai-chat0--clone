@@ -1,0 +1,55 @@
+﻿node.exe : (node:28312) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland altern
+ative instead.
+At E:\node.js\node-v22.22.1-win-x64\node-v22.22.1-win-x64\pnpm.ps1:16 char:5
++     & "$basedir/node$exe"  "$basedir/node_modules/pnpm/bin/pnpm.mjs"  ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:28312) [D...native instead.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Found eas-cli in your project dependencies.
+It's recommended to use the "cli.version" field in eas.json to enforce the eas-cli version for your project.
+Learn more: https://github.com/expo/eas-cli#enforcing-eas-cli-version-for-your-project
+
+- Exporting...
+[expo-cli] Using src/app as the root directory for Expo Router.
+[expo-cli] Starting Metro Bundler
+[expo-cli] iOS Bundled 6296ms index.ts (1182 modules)
+[expo-cli] Android Bundled 12571ms index.ts (1650 modules)
+[expo-cli] Creating asset map
+[expo-cli] 
+[expo-cli] › Assets (34):
+[expo-cli] node_modules\@expo-google-fonts\material-symbols\400Regular\MaterialSymbols_400Regular.ttf (956KB)
+[expo-cli] node_modules\expo-router\assets\arrow_down.png (9.5KB)
+[expo-cli] node_modules\expo-router\assets\arrow_right.xml (307B)
+[expo-cli] node_modules\expo-router\assets\checkmark.xml (312B)
+[expo-cli] node_modules\expo-router\assets\error.png (469B)
+[expo-cli] node_modules\expo-router\assets\file.png (138B)
+[expo-cli] node_modules\expo-router\assets\forward.png (188B)
+[expo-cli] node_modules\expo-router\assets\pkg.png (364B)
+[expo-cli] node_modules\expo-router\assets\react-navigation\elements\back-icon-mask.png (653B)
+[expo-cli] node_modules\expo-router\assets\react-navigation\elements\back-icon.png (8 variations | 359B)
+[expo-cli] node_modules\expo-router\assets\react-navigation\elements\clear-icon.png (4 variations | 425B)
+[expo-cli] node_modules\expo-router\assets\react-navigation\elements\close-icon.png (4 variations | 235B)
+[expo-cli] node_modules\expo-router\assets\react-navigation\elements\search-icon.png (7 variations | 592B)
+[expo-cli] node_modules\expo-router\assets\sitemap.png (465B)
+[expo-cli] node_modules\expo-router\assets\unmatched.png (4.8KB)
+[expo-cli] 
+[expo-cli] › ios bundles (2):
+[expo-cli] _expo/static/js/ios/index-673cc96dd36ddacc2464c12d99856621.hbc (2.4MB)
+[expo-cli] _expo/static/js/ios/index-673cc96dd36ddacc2464c12d99856621.hbc.map (6.8MB)
+[expo-cli] › android bundles (2):
+[expo-cli] _expo/static/js/android/index-4468a5a3764976d3ec7f0955bd73c75e.hbc (3.4MB)
+[expo-cli] _expo/static/js/android/index-4468a5a3764976d3ec7f0955bd73c75e.hbc.map (8.7MB)
+[expo-cli] › Files (2):
+[expo-cli] assetmap.json (12KB)
+[expo-cli] metadata.json (3.4KB)
+[expo-cli] 
+[expo-cli] Exported: dist
+√ Exported bundle(s)
+- Uploading...
+- Uploading assetmap.json (0 / 11.7 KB)
+√ Uploaded assetmap.json 1s
+× Failed to upload
+request to https://update-assets-upload-production.storage.googleapis.com/ failed, reason: read ECONNRESET
+    Error: update command failed.

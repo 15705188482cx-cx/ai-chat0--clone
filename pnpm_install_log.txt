@@ -1,0 +1,15 @@
+﻿? Verifying lockfile against supply-chain policies (1370 entries)...
+✓ Lockfile passes supply-chain policies (1370 entries in 2.2s)
+[ENOENT] ENOENT: no such file or directory, open 'G:\2026Work\AIchat\ai-chat-clone\patches\react-native-screens@4.25.2.patch'
+
+pnpm: ENOENT: no such file or directory, open 'G:\2026Work\AIchat\ai-chat-clone\patches\react-native-screens@4.25.2.patch'
+    at async open (node:internal/fs/promises:636:25)
+    at async Object.readFile (node:internal/fs/promises:1235:14)
+    at async readNormalizedFile (file:///E:/node.js/node-v22.22.1-win-x64/node-v22.22.1-win-x64/node_modules/pnpm/dist/pnpm.mjs:61635:19)
+    at async createHexHashFromFile (file:///E:/node.js/node-v22.22.1-win-x64/node-v22.22.1-win-x64/node_modules/pnpm/dist/pnpm.mjs:61632:24)
+    at async file:///E:/node.js/node-v22.22.1-win-x64/node-v22.22.1-win-x64/node_modules/pnpm/dist/pnpm.mjs:160187:20
+    at async Promise.all (index 0)
+    at async pMapValues (file:///E:/node.js/node-v22.22.1-win-x64/node-v22.22.1-win-x64/node_modules/pnpm/dist/pnpm.mjs:160186:3)
+    at async _install (file:///E:/node.js/node-v22.22.1-win-x64/node-v22.22.1-win-x64/node_modules/pnpm/dist/pnpm.mjs:162660:132)
+    at async mutateModules (file:///E:/node.js/node-v22.22.1-win-x64/node-v22.22.1-win-x64/node_modules/pnpm/dist/pnpm.mjs:162596:19)
+    at async recursive (file:///E:/node.js/node-v22.22.1-win-x64/node-v22.22.1-win-x64/node_modules/pnpm/dist/pnpm.mjs:168527:124)

@@ -1,4 +1,4 @@
-﻿import { useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -56,10 +56,10 @@ export default function PersonaDetailScreen() {
       if (texts.length === 0) {
         Alert.alert(
           "无法分析",
-          "没有找到聊天记录。
+          `没有找到聊天记录。
 
 请先在分身管理页 → 📎追加聊天记录，
-或在设置页导入聊天记录后重试。"
+或在设置页导入聊天记录后重试。`
         );
         setAnalyzing(false);
         return;
@@ -69,10 +69,10 @@ export default function PersonaDetailScreen() {
       const result = await analyzeMemories(texts, extraInfo);
       await saveMemories(persona.id, result);
       setMemories(result);
-      Alert.alert("完成", "共同记忆分析完成！
+      Alert.alert("完成", `共同记忆分析完成！
 
 AI 已从聊天记录中提取了重要时刻、日常习惯、偏好等共同记忆。
-这些记忆会在对话中自然融入。");
+这些记忆会在对话中自然融入。`);
     } catch (err) {
       console.warn("[detail] analyzeMemories failed:", err);
       Alert.alert("分析失败", "请稍后重试，或检查 API Key 是否配置正确。");

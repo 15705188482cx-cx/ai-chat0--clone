@@ -24,6 +24,7 @@ import type { Persona } from "../modules/persona/types";
 import { nanoid } from "nanoid";
 import { formatDate } from "../utils/dateFormat";
 import { getStore } from "../modules/database/storeProvider";
+import { BUNDLED_CHAT_DATA } from "../modules/testData/bundledTestData";
 
 const WECHAT_GREEN = "#07C160";
 const PAGE_BG = "#F3F3F3";
@@ -103,57 +104,39 @@ export default function ImportWizardScreen() {
     }
   }, [pickAndRead, handleParse]);
 
-  // 按钮暂时仅作提示（测试数据可从 test-data/ 目录手动选择 JSON 文件）
+  // 一键加载内置测试数据(quick 版 50 条恋人对话,通过 require() 内嵌进 bundle,APK 端可用)
   const handleLoadTestData = useCallback(async () => {
     try {
-      // Web: fetch test data directly from the bundled JSON
-      if (typeof window !== "undefined") {
-        var raw = null;
-        try {
-          var resp = await fetch("/test-data.json");
-          if (resp.ok) raw = await resp.json();
-        } catch (err) { console.warn("[import] 加载测试数据失败:", err); }
-        if (!raw) {
-          try {
-            var resp = await fetch("http://localhost:3456/chat_full.json");
-            if (resp.ok) raw = await resp.json();
-          } catch (err) { console.warn("[import] 加载测试数据失败:", err); }
-        }
-        if (!raw && typeof window !== "undefined" && (window as any).__TEST_DATA__) {
-          raw = (window as any).__TEST_DATA__;
-        }
-        if (!raw) throw new Error("无法加载测试数据，请手动选择文件导入");
-        const result = parseChatFile(JSON.stringify(raw), "json");
-        if (!result || result.totalMessages === 0) throw new Error("解析失败");
-        
-        // Store via IDataStore
-        const store = await getStore();
-        const cleanedMsgs = result.sessions.flatMap((s: any) => s.messages)
-          .filter((m: any) => m.type === 'text' && m.content.trim());
-        const batchId2 = nanoid();
-        await store.bulkInsertChatRecords(
-          cleanedMsgs.map((m: any) => ({
-            batch_id: batchId2,
-            sender_name: m.senderName,
-            content: m.content,
-            timestamp: new Date(m.timestamp).toISOString(),
-            session_id: null,
-            type: m.type,
-          })),
-        );
-        
-        setParseResult(result);
-        setStep("result");
-        setImageCount(0);
-        
-        // Match personas
-        const matches: ParticipantMatch[] = [];
-        for (const p of result.participants) {
-          if (p === "我") continue;
-          matches.push({ senderName: p, persona: null });
-        }
-        setParticipantMatches(matches);
+      const result = parseChatFile(JSON.stringify(BUNDLED_CHAT_DATA), "json");
+      if (!result || result.totalMessages === 0) {
+        throw new Error("解析失败");
       }
+
+      const store = await getStore();
+      const cleanedMsgs = result.sessions.flatMap((s: any) => s.messages)
+        .filter((m: any) => m.type === 'text' && m.content.trim());
+      const batchId2 = nanoid();
+      await store.bulkInsertChatRecords(
+        cleanedMsgs.map((m: any) => ({
+          batch_id: batchId2,
+          sender_name: m.senderName,
+          content: m.content,
+          timestamp: new Date(m.timestamp).toISOString(),
+          session_id: null,
+          type: m.type,
+        })),
+      );
+
+      setParseResult(result);
+      setStep("result");
+      setImageCount(0);
+
+      const matches: ParticipantMatch[] = [];
+      for (const p of result.participants) {
+        if (p === "我") continue;
+        matches.push({ senderName: p, persona: null });
+      }
+      setParticipantMatches(matches);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "加载失败";
       setParseError(msg);
@@ -235,6 +218,7 @@ export default function ImportWizardScreen() {
               activeOpacity={0.7}
             >
               <Text style={styles.primaryBtnText}>📸 截图导入</Text>
+              <Text style={{ fontSize: 11, color: "#999", textAlign: "center", marginTop: 2 }}>需要电脑端 OCR 服务</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.testDataBtn}

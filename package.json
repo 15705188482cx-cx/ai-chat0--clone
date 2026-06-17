@@ -16,6 +16,7 @@
     "expo-secure-store": "^56.0.4",
     "expo-sqlite": "^56.0.4",
     "expo-status-bar": "~56.0.4",
+    "expo-updates": "~56.0.19",
     "expo-web-browser": "^56.0.5",
     "nanoid": "^5.1.11",
     "react": "19.2.7",
@@ -63,18 +64,6 @@
     "lint": "eslint src/",
     "format": "prettier --write src/",
     "test": "jest"
-  },
-  "jest": {
-    "preset": "jest-expo",
-    "setupFiles": [
-      "<rootDir>/__tests__/jest.setup.ts"
-    ],
-    "modulePathIgnorePatterns": [
-      "<rootDir>/__tests__/jest.setup.ts"
-    ],
-    "transformIgnorePatterns": [
-      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg|nanoid)"
-    ]
   },
   "private": true
 }

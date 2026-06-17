@@ -65,6 +65,32 @@ export default function HomeTabScreen() {
     }, [loadStats]),
   );
 
+
+  // onboarding: auto-load test data + create fallback persona + jump to chat
+  useFocusEffect(
+    useCallback(() => {
+      if (onboardingRan) return;
+      if (firstLaunch.isLoading) return;
+      if (!firstLaunch.needsOnboarding) {
+        setOnboardingRan(true);
+        if (!firstLaunch.hasKey) setKeyModalVisible(true);
+        return;
+      }
+      (async () => {
+        const result = await autoSetup();
+        if (result) {
+          const conversationId = await createOnboardingConversation(result.personaId);
+          if (conversationId) {
+            setOnboardingRan(true);
+            if (!firstLaunch.hasKey) setKeyModalVisible(true);
+            router.replace("/chat/" + conversationId);
+          }
+        }
+        setOnboardingRan(true);
+      })();
+    }, [onboardingRan, firstLaunch.isLoading, firstLaunch.needsOnboarding, firstLaunch.hasKey, router]),
+  );
+
   // Web fallback：visibilitychange + 定时轮询
   useEffect(() => {
     // 规则 6（最小实现）：只在 Web 端添加 fallback

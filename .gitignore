@@ -57,14 +57,11 @@ serve-test.js
 screenshot*.png
 
 # Design docs
-DESIGN_SPEC.md
-__tests__/
 
 # Backup files
 *.bak
 
 # Debug tools
-tools/create-persona/
 tools/e2e_test.mjs
 tools/fix-store.js
 tools/smoke_test.mjs
